@@ -485,3 +485,4 @@ end;
 $$;
 
 grant execute on function public.confirm_participant_attendance(text) to authenticated;
+

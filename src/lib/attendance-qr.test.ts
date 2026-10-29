@@ -238,3 +238,4 @@ describe("QR Session Validation Logic & Security Rules", () => {
     expect(res.code).toBe("ATTENDANCE_ALREADY_MARKED");
   });
 });
+

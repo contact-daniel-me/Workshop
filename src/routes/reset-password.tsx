@@ -1,19 +1,15 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { normalizeAppPassword } from "@/lib/auth-helpers";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Lock, Mail, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => ({
     meta: [
-      { title: "Set a new password — Event Management Portal" },
-      { name: "description", content: "Choose a new password for your account." },
-      { property: "og:title", content: "Set a new password — Event Management Portal" },
-      { property: "og:description", content: "Choose a new password for your account." },
+      { title: "Password Recovery — Event Management Portal" },
+      { name: "description", content: "Password recovery instructions." },
+      { property: "og:title", content: "Password Recovery — Event Management Portal" },
+      { property: "og:description", content: "Password recovery instructions." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -23,30 +19,39 @@ export const Route = createFileRoute("/reset-password")({
 
 function Reset() {
   const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
+
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <form
-        className="w-full max-w-sm space-y-4"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const f = new FormData(e.currentTarget);
-          const pw = String(f.get("pw"));
-          if (!pw) return toast.error("Password is required.");
-          if (pw !== String(f.get("pw2"))) return toast.error("Passwords don't match.");
-          setBusy(true);
-          const { error } = await supabase.auth.updateUser({ password: normalizeAppPassword(pw) });
-          setBusy(false);
-          if (error) return toast.error(error.message);
-          toast.success("Password updated");
-          navigate({ to: "/dashboard" });
-        }}
-      >
-        <h1 className="text-2xl font-bold">Set a new password</h1>
-        <div className="space-y-1.5"><Label>New password</Label><Input name="pw" type="password" required /></div>
-        <div className="space-y-1.5"><Label>Confirm password</Label><Input name="pw2" type="password" required /></div>
-        <Button className="w-full" disabled={busy}>Update password</Button>
-      </form>
+    <div className="flex min-h-screen items-center justify-center p-6 bg-background">
+      <Card className="w-full max-w-md shadow-xl border rounded-2xl p-6 text-center space-y-4">
+        <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+          <Lock className="h-6 w-6" />
+        </div>
+
+        <div className="space-y-2">
+          <h1 className="font-display text-2xl font-bold text-foreground">
+            Password Recovery
+          </h1>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Password recovery is managed by your SmartAttend administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-left space-y-2">
+          <p className="font-semibold text-primary flex items-center gap-1.5">
+            <Mail className="h-4 w-4" /> Workshop Administrator Contact:
+          </p>
+          <p className="text-foreground font-mono font-medium text-xs">admin@growiota.in</p>
+          <p className="text-[11px] text-muted-foreground">
+            Contact an authorized administrator to reset your account credentials directly from the management console.
+          </p>
+        </div>
+
+        <Button asChild className="w-full font-bold">
+          <Link to="/auth">
+            <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Sign In
+          </Link>
+        </Button>
+      </Card>
     </div>
   );
 }

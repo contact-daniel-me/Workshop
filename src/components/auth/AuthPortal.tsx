@@ -748,47 +748,42 @@ function PhoneLookupView({
 }
 
 /**
- * 4. Password Recovery
+ * 4. Password Recovery — Admin-Managed Recovery Notice
+ * Requirement: For security reasons, participants do not receive password-reset emails.
+ * They are instructed to contact their workshop administrator.
  */
 function ForgotPassword({ setMode }: { setMode: (m: AuthMode) => void }) {
-  const [sent, setSent] = useState(false);
   return (
-    <form
-      className="space-y-4"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        const email = String(new FormData(e.currentTarget).get("email")).trim();
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/reset-password`,
-        });
-        if (error) {
-          toast.error(error.message);
-          return;
-        }
-        setSent(true);
-      }}
-    >
-      <h2 className="font-display text-2xl font-bold">Password Recovery</h2>
-      {sent ? (
-        <p className="text-sm text-muted-foreground">
-          If that email is registered, recovery instructions have been sent.
+    <div className="space-y-5 text-center py-2">
+      <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+        <Lock className="h-6 w-6" />
+      </div>
+
+      <div className="space-y-2">
+        <h2 className="font-display text-2xl font-bold text-foreground">Forgot your password?</h2>
+        <p className="text-xs text-muted-foreground leading-relaxed text-left sm:text-center">
+          Password recovery is managed by your SmartAttend administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.
         </p>
-      ) : (
-        <>
-          <Field label="Registered Email Address">
-            <Input name="email" type="email" placeholder="Enter your email" required />
-          </Field>
-          <Button className="w-full font-bold">Send Recovery Instructions</Button>
-        </>
-      )}
-      <button
+      </div>
+
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-left space-y-2">
+        <p className="font-semibold text-primary flex items-center gap-1.5">
+          <Mail className="h-4 w-4" /> Workshop Administrator Contact:
+        </p>
+        <p className="text-foreground font-mono font-medium text-xs">admin@growiota.in</p>
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Your authorized administrator can securely update your account password directly from the management console.
+        </p>
+      </div>
+
+      <Button
         type="button"
-        className="text-xs text-primary hover:underline block pt-2"
+        className="w-full font-bold"
         onClick={() => setMode("login")}
       >
-        Back to Phone Login
-      </button>
-    </form>
+        Back to Sign In
+      </Button>
+    </div>
   );
 }
 

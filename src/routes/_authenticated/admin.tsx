@@ -56,9 +56,13 @@ import {
   ShieldAlert,
   UserPlus,
   Camera,
+  KeyRound,
+  Trash2,
 } from "lucide-react";
 import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
+import { ChangeParticipantPasswordDialog } from "@/components/admin/ChangeParticipantPasswordDialog";
+import { DeleteParticipantDialog } from "@/components/admin/DeleteParticipantDialog";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -128,6 +132,10 @@ function AdminPage() {
     profile: { id: string; full_name: string; participant_code: string; email: string; phone: string; photo_path: string | null };
     attendance?: { id: string; status: string; checked_in_at: string; method: string; marked_by: string | null; remarks?: string | null };
   } | null>(null);
+
+  // Participant Management Action Dialogs (Change Password & Delete Participant)
+  const [passwordTargetUser, setPasswordTargetUser] = useState<{ id: string; full_name: string; participant_code: string } | null>(null);
+  const [deleteTargetUser, setDeleteTargetUser] = useState<{ id: string; full_name: string; participant_code: string; email?: string; phone?: string; photoUrl?: string | null } | null>(null);
 
   // Sync settings into form
   useEffect(() => {
@@ -1176,14 +1184,52 @@ function AdminPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  title="View Full Profile"
+                                  className="h-8 w-8 p-0"
+                                  title="View Details"
                                   onClick={() => setSelectedParticipant(p)}
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
+
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                                  title="Change Password"
+                                  onClick={() =>
+                                    setPasswordTargetUser({
+                                      id: p.id,
+                                      full_name: p.full_name,
+                                      participant_code: p.participant_code,
+                                    })
+                                  }
+                                >
+                                  <KeyRound className="h-4 w-4" />
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  title="Delete Participant"
+                                  onClick={() =>
+                                    setDeleteTargetUser({
+                                      id: p.id,
+                                      full_name: p.full_name,
+                                      participant_code: p.participant_code,
+                                      email: p.email,
+                                      phone: p.phone,
+                                      photoUrl: p.id ? photoUrls[adminData.profiles.find((x) => x.id === p.id)?.photo_path ?? ""] : undefined,
+                                    })
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0"
                                   title="Mark Attendance Manually"
                                   onClick={() => {
                                     setManualTargetUser(p);
@@ -1729,10 +1775,74 @@ function AdminPage() {
                   </Button>
                 </div>
               )}
+
+              {/* Account Management Actions */}
+              <div className="flex items-center justify-between border-t pt-4">
+                <span className="text-xs font-semibold text-muted-foreground">Account Actions:</span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs text-amber-700 hover:text-amber-800 border-amber-300"
+                    onClick={() => {
+                      setPasswordTargetUser({
+                        id: selectedParticipant.id,
+                        full_name: selectedParticipant.full_name,
+                        participant_code: selectedParticipant.participant_code,
+                      });
+                    }}
+                  >
+                    <KeyRound className="h-3.5 w-3.5" /> Change Password
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+                    onClick={() => {
+                      setDeleteTargetUser({
+                        id: selectedParticipant.id,
+                        full_name: selectedParticipant.full_name,
+                        participant_code: selectedParticipant.participant_code,
+                        email: selectedParticipant.email,
+                        phone: selectedParticipant.phone,
+                        photoUrl: selectedParticipant.id
+                          ? photoUrls[adminData?.profiles.find((x) => x.id === selectedParticipant.id)?.photo_path ?? ""]
+                          : undefined,
+                      });
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete Account
+                  </Button>
+                </div>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Change Participant Password Dialog */}
+      <ChangeParticipantPasswordDialog
+        open={!!passwordTargetUser}
+        onOpenChange={(open) => !open && setPasswordTargetUser(null)}
+        participant={passwordTargetUser}
+        onSuccess={() => {
+          void refetch();
+        }}
+      />
+
+      {/* Delete Participant Dialog */}
+      <DeleteParticipantDialog
+        open={!!deleteTargetUser}
+        onOpenChange={(open) => !open && setDeleteTargetUser(null)}
+        participant={deleteTargetUser}
+        onSuccess={() => {
+          if (selectedParticipant?.id === deleteTargetUser?.id) {
+            setSelectedParticipant(null);
+          }
+          void refetch();
+        }}
+      />
+
       {/* Attendee Details & Photograph Modal (Requirement 7) */}
       <Dialog open={!!viewingRecord} onOpenChange={(open) => !open && setViewingRecord(null)}>
         <DialogContent className="sm:max-w-md">

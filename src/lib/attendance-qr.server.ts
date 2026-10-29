@@ -705,3 +705,4 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
       },
     };
   });
+

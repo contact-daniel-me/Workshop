@@ -629,3 +629,4 @@ export function AdminQrScannerTab({ workshopName = "SmartAttend Workshop", onAtt
     </div>
   );
 }
+

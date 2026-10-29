@@ -455,3 +455,185 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
     }
   });
 
+/** Staff only: Change a participant's password securely */
+export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: { targetUserId: string; newPassword: string }) => {
+    const targetUserId = String(input.targetUserId ?? "").trim();
+    const newPassword = String(input.newPassword ?? "");
+    if (!targetUserId) throw new Error("Participant ID is required.");
+    if (!newPassword || newPassword.length < 8) {
+      throw new Error("Password must be at least 8 characters long.");
+    }
+    return { targetUserId, newPassword };
+  })
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1. Authorize caller
+    const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+    if (!isStaff) throw new Error("Unauthorized: Only administrators can change passwords.");
+
+    // 2. Fetch target profile
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, participant_code")
+      .eq("id", data.targetUserId)
+      .maybeSingle();
+
+    if (!profile) throw new Error("Participant profile not found.");
+
+    // 3. Prevent modifying super_admin accounts unless caller is super_admin
+    const { data: targetIsSuper } = await supabaseAdmin.rpc("has_role", {
+      _user_id: data.targetUserId,
+      _role: "super_admin",
+    });
+    if (targetIsSuper) {
+      const { data: callerIsSuper } = await supabaseAdmin.rpc("has_role", {
+        _user_id: userId,
+        _role: "super_admin",
+      });
+      if (!callerIsSuper) {
+        throw new Error("Unauthorized: Only super administrators can modify super administrator credentials.");
+      }
+    }
+
+    // 4. Update password via Supabase Auth Admin API
+    const saltedPassword = normalizeAppPassword(data.newPassword);
+    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(data.targetUserId, {
+      password: saltedPassword,
+    });
+
+    if (updateErr) {
+      // Record failure audit log
+      await supabaseAdmin.from("audit_logs").insert({
+        actor_id: userId,
+        target_user: data.targetUserId,
+        action: "admin_password_change_failed",
+        details: {
+          error: updateErr.message,
+          timestamp: new Date().toISOString(),
+        } as never,
+      });
+      throw new Error(`Failed to update password: ${updateErr.message}`);
+    }
+
+    // 5. Record success audit log (NEVER store or log passwords)
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      target_user: data.targetUserId,
+      action: "admin_password_changed",
+      details: {
+        participant_code: profile.participant_code,
+        full_name: profile.full_name,
+        changed_by: userId,
+        timestamp: new Date().toISOString(),
+      } as never,
+    });
+
+    return {
+      ok: true,
+      message: "Password updated successfully. The participant can now sign in using the new password.",
+    };
+  });
+
+/** Staff only: Delete a participant account with attendance retention audit logging */
+export const adminDeleteParticipant = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: { targetUserId: string }) => {
+    const targetUserId = String(input.targetUserId ?? "").trim();
+    if (!targetUserId) throw new Error("Participant ID is required.");
+    return { targetUserId };
+  })
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1. Authorize caller
+    const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+    if (!isStaff) throw new Error("Unauthorized: Only administrators can delete participant accounts.");
+
+    // 2. Prevent self-deletion
+    if (data.targetUserId === userId) {
+      throw new Error("Administrators cannot delete their own active account.");
+    }
+
+    // 3. Fetch target profile
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, participant_code, photo_path, email, phone")
+      .eq("id", data.targetUserId)
+      .maybeSingle();
+
+    if (!profile) throw new Error("Participant profile not found.");
+
+    // 4. Prevent deleting staff or super_admin accounts unless caller is super_admin
+    const { data: targetIsStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: data.targetUserId });
+    if (targetIsStaff) {
+      const { data: callerIsSuper } = await supabaseAdmin.rpc("has_role", {
+        _user_id: userId,
+        _role: "super_admin",
+      });
+      if (!callerIsSuper) {
+        throw new Error("Unauthorized: Only super administrators can remove staff accounts.");
+      }
+    }
+
+    // 5. Gather attendance records for audit retention before deletion
+    const { data: attendanceRecords } = await supabaseAdmin
+      .from("attendance")
+      .select("id, day_date, status, method, checked_in_at")
+      .eq("user_id", data.targetUserId);
+
+    const attendanceCount = attendanceRecords?.length ?? 0;
+
+    // 6. Delete profile photo from photos bucket if exists
+    if (profile.photo_path) {
+      try {
+        await supabaseAdmin.storage.from("photos").remove([profile.photo_path]);
+      } catch (storageErr) {
+        console.warn("Could not delete photo from storage:", storageErr);
+      }
+    }
+
+    // 7. Delete auth user (cascades cleanly to profiles and associated tables)
+    const { error: deleteErr } = await supabaseAdmin.auth.admin.deleteUser(data.targetUserId);
+
+    if (deleteErr) {
+      await supabaseAdmin.from("audit_logs").insert({
+        actor_id: userId,
+        target_user: data.targetUserId,
+        action: "admin_participant_delete_failed",
+        details: {
+          error: deleteErr.message,
+          timestamp: new Date().toISOString(),
+        } as never,
+      });
+      throw new Error(`Failed to delete participant account: ${deleteErr.message}`);
+    }
+
+    // 8. Write retention audit log preserving historical record summary
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "admin_participant_deleted",
+      details: {
+        deleted_user_id: data.targetUserId,
+        full_name: profile.full_name,
+        participant_code: profile.participant_code,
+        email: profile.email,
+        phone: profile.phone,
+        retained_attendance_count: attendanceCount,
+        archived_attendance: attendanceRecords ?? [],
+        deleted_by: userId,
+        timestamp: new Date().toISOString(),
+      } as never,
+    });
+
+    return {
+      ok: true,
+      message: "Participant account deleted successfully.",
+    };
+  });
+
+
