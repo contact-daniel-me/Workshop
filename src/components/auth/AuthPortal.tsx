@@ -559,10 +559,22 @@ function PhoneLookupView({
 
     setBusy(true);
     try {
-      const res = await lookupProfileByPhone({ data: { phone: cleanPhone } });
+      // 1. Direct Supabase RPC (fast, resilient, direct to Postgres)
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("lookup_profile_by_phone", {
+        _phone: cleanPhone,
+      });
+
+      let res: LookupProfileResult | null = null;
+      if (!rpcErr && rpcData) {
+        res = rpcData as LookupProfileResult;
+      } else {
+        // 2. Fall back to server function if RPC call didn't succeed
+        res = await lookupProfileByPhone({ data: { phone: cleanPhone } });
+      }
+
       setResult(res);
-      if (!res.found) {
-        toast.error(res.message || "No registered account found with that mobile number.");
+      if (!res?.found) {
+        toast.error(res?.message || "No registered account found with that mobile number.");
       } else {
         toast.success("Profile details retrieved!");
       }

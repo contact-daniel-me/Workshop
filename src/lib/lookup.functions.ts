@@ -33,6 +33,18 @@ export const lookupProfileByPhone = createServerFn({ method: "POST" })
       return { found: false, message: "Enter a valid 10-digit mobile number." };
     }
 
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("lookup_profile_by_phone", {
+        _phone: phone,
+      });
+      if (!rpcErr && rpcData) {
+        return rpcData as unknown as LookupProfileResult;
+      }
+    } catch {
+      // Fallback to server admin client if RPC is not available
+    }
+
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     // Query profile by phone
