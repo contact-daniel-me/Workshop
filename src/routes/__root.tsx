@@ -39,6 +39,7 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error("Application error:", error);
   const router = useRouter();
+  const errorMessage = error instanceof Error ? error.message : typeof error === "string" ? error : "";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -49,13 +50,18 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        {errorMessage && (
+          <div className="mt-4 p-3 rounded-lg bg-destructive/10 text-destructive text-xs text-left overflow-auto max-h-36 font-mono border border-destructive/20">
+            {errorMessage}
+          </div>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 cursor-pointer"
           >
             Try again
           </button>
