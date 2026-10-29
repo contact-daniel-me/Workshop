@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { appUniversalSignIn, normalizeAppPassword, phoneToAuthEmail } from "@/lib/auth-helpers";
-import { lookupProfileByPhone, uploadRegistrationPhoto, type LookupProfileResult } from "@/lib/lookup.functions";
+import { lookupProfileByPhone, uploadRegistrationPhoto, publicRegisterParticipant, type LookupProfileResult } from "@/lib/lookup.functions";
 import { INDIAN_PHONE, normalizePhone } from "@/lib/attendance";
 import { signedUrls } from "@/lib/use-me";
 import { Button } from "@/components/ui/button";
@@ -356,84 +356,38 @@ function RegisterForm({
 
         setBusy(true);
 
-        // Check for duplicates
-        const { data: taken } = await supabase.rpc("registration_taken", {
-          _email: email,
-          _phone: phone,
-        });
-
-        if (taken) {
-          setBusy(false);
-          return setErrors({
-            [taken]: `This ${taken === "phone" ? "mobile number" : "email address"} is already registered.`,
-          });
-        }
-
-        // Authenticate via deterministic phone identifier
-        const authEmail = phoneToAuthEmail(phone);
-        const { data, error } = await supabase.auth.signUp({
-          email: authEmail,
-          password: normalizeAppPassword(pw),
-          options: {
+        try {
+          const photoBase64 = await fileToBase64(photoFile);
+          const res = await publicRegisterParticipant({
             data: {
-              full_name: name,
+              fullName: name,
               phone,
               email,
-              consent: "true",
-              role: "participant",
+              password: pw,
+              photoBase64,
             },
-          },
-        });
+          });
 
-        if (error) {
+          if (res?.ok && res.user) {
+            setRegisteredCode(res.user.participantCode ?? "SA-2026");
+          } else {
+            toast.success("Account created successfully!");
+            setRegisteredCode("SA-2026");
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "Registration failed";
+          if (msg.includes("already registered")) {
+            if (msg.toLowerCase().includes("mobile") || msg.toLowerCase().includes("phone")) {
+              setErrors({ phone: msg });
+            } else {
+              setErrors({ email: msg });
+            }
+          } else {
+            toast.error(msg);
+          }
+        } finally {
           setBusy(false);
-          return toast.error(error.message);
         }
-
-        // Record explicit consent
-        if (data.user) {
-          try {
-            await supabase.from("consent_records").insert({
-              user_id: data.user.id,
-              consent_type: "privacy_policy_and_biometric_face_verification",
-              agreed: true,
-            });
-          } catch {
-            // Non-blocking consent record
-          }
-        }
-
-        // Upload photo securely via server function (bypasses storage RLS issues)
-        if (data.user && photoFile) {
-          try {
-            const photoBase64 = await fileToBase64(photoFile);
-            await uploadRegistrationPhoto({
-              data: {
-                userId: data.user.id,
-                photoBase64,
-              },
-            });
-          } catch (photoErr: unknown) {
-            console.error("Photo upload failed:", photoErr);
-            toast.error(
-              photoErr instanceof Error
-                ? photoErr.message
-                : "Photo upload issue, but account was registered."
-            );
-          }
-
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("participant_code")
-            .eq("id", data.user.id)
-            .maybeSingle();
-
-          setRegisteredCode(profile?.participant_code ?? "SA-2026");
-        } else {
-          setRegisteredCode("SA-2026");
-        }
-
-        setBusy(false);
       }}
     >
       <div>

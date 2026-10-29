@@ -120,10 +120,9 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
     const { data: activeSessions } = await supabaseAdmin
       .from("qr_sessions")
       .select("*")
-      .eq("participant_id", targetId as never)
+      .eq("created_by", targetId)
       .eq("day_date", today)
       .eq("revoked", false)
-      .is("used_at" as never, null)
       .gt("expires_at", expiryBufferTime)
       .order("created_at", { ascending: false })
       .limit(1);
@@ -144,16 +143,14 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
     // 6. Otherwise revoke older expired tokens for today
     await supabaseAdmin
       .from("qr_sessions")
-      .update({ revoked: true, revoked_at: nowIso } as never)
-      .eq("participant_id", targetId as never)
+      .update({ revoked: true })
+      .eq("created_by", targetId)
       .eq("day_date", today)
-      .eq("revoked", false)
-      .is("used_at" as never, null);
+      .eq("revoked", false);
 
     // 7. Generate a new cryptographically secure token
-    const { generateSecureToken, hashToken, generateShortCode } = await import("./attendance-qr.crypto");
+    const { generateSecureToken, generateShortCode } = await import("./attendance-qr.crypto");
     const token = generateSecureToken(32);
-    const token_hash = hashToken(token);
     const short_code = generateShortCode();
 
     const validityMinutes = settings.qr_validity_minutes || 15;
@@ -162,16 +159,13 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
     const { data: newSession, error: insertErr } = await supabaseAdmin
       .from("qr_sessions")
       .insert({
-        participant_id: targetId,
         day_date: today,
         token,
-        token_hash,
         short_code,
-        issued_at: nowIso,
         expires_at: expiresAt,
         revoked: false,
-        created_by: userId,
-      } as never)
+        created_by: targetId,
+      })
       .select()
       .single();
 
@@ -289,15 +283,13 @@ export const verifyParticipantQr = createServerFn({ method: "POST" })
       };
     }
 
-    const { hashToken } = await import("./attendance-qr.crypto");
-    const token_h = hashToken(token);
     const today = todayLocal();
 
-    // Query session by token, token_hash, or short_code
+    // Query session by token or short_code
     const { data: sessions, error: sessionErr } = await supabaseAdmin
       .from("qr_sessions")
       .select("*")
-      .or(`token.eq.${token},token_hash.eq.${token_h},short_code.eq.${token.toUpperCase()}` as never)
+      .or(`token.eq.${token},short_code.eq.${token.toUpperCase()}`)
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -312,6 +304,7 @@ export const verifyParticipantQr = createServerFn({ method: "POST" })
     const session = sessions[0] as unknown as {
       id: string;
       participant_id?: string | null;
+      created_by?: string | null;
       day_date: string;
       token: string;
       expires_at: string;
@@ -320,7 +313,8 @@ export const verifyParticipantQr = createServerFn({ method: "POST" })
       used_at?: string | null;
     };
 
-    if (!session.participant_id) {
+    const targetParticipantId = session.participant_id || session.created_by;
+    if (!targetParticipantId) {
       return {
         valid: false,
         resultCode: "INVALID_QR",
@@ -332,7 +326,7 @@ export const verifyParticipantQr = createServerFn({ method: "POST" })
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("id, full_name, participant_code, email, phone, photo_path, verification_status")
-      .eq("id", session.participant_id)
+      .eq("id", targetParticipantId)
       .maybeSingle();
 
     if (!profile) {
@@ -500,8 +494,6 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
     }
 
     const { token } = input;
-    const { hashToken } = await import("./attendance-qr.crypto");
-    const token_h = hashToken(token);
     const today = todayLocal();
     const nowIso = new Date().toISOString();
 
@@ -509,12 +501,13 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
     const { data: sessions } = await supabaseAdmin
       .from("qr_sessions")
       .select("*")
-      .or(`token.eq.${token},token_hash.eq.${token_h},short_code.eq.${token.toUpperCase()}` as never)
+      .or(`token.eq.${token},short_code.eq.${token.toUpperCase()}`)
       .limit(1);
 
     const session = sessions?.[0] as unknown as {
       id: string;
       participant_id?: string | null;
+      created_by?: string | null;
       day_date: string;
       expires_at: string;
       revoked: boolean;
@@ -522,7 +515,8 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
       used_at?: string | null;
     };
 
-    if (!session || !session.participant_id) {
+    const targetParticipantId = session?.participant_id || session?.created_by;
+    if (!session || !targetParticipantId) {
       return {
         ok: false,
         resultCode: "FAILED",
@@ -530,19 +524,11 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
       };
     }
 
-    if (session.used_at) {
-      return {
-        ok: false,
-        resultCode: "ALREADY_MARKED",
-        message: "This QR code has already been consumed.",
-      };
-    }
-
-    if (session.revoked || session.revoked_at) {
+    if (session.revoked) {
       return {
         ok: false,
         resultCode: "FAILED",
-        message: "This QR code has been revoked.",
+        message: "This QR code has already been consumed or revoked.",
       };
     }
 
@@ -566,7 +552,7 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("id, full_name, participant_code, email, photo_path, verification_status")
-      .eq("id", session.participant_id)
+      .eq("id", targetParticipantId)
       .maybeSingle();
 
     if (!profile || profile.verification_status !== "verified") {
@@ -635,7 +621,7 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
     // 6. Mark token as consumed
     await supabaseAdmin
       .from("qr_sessions")
-      .update({ used_at: nowIso } as never)
+      .update({ revoked: true })
       .eq("id", session.id);
 
     // 7. Insert audit log

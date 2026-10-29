@@ -503,6 +503,7 @@ export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
     const saltedPassword = normalizeAppPassword(data.newPassword);
     const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(data.targetUserId, {
       password: saltedPassword,
+      email_confirm: true,
     });
 
     if (updateErr) {
