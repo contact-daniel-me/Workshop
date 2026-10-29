@@ -55,8 +55,10 @@ import {
   History,
   ShieldAlert,
   UserPlus,
+  Camera,
 } from "lucide-react";
 import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
+import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -117,6 +119,15 @@ function AdminPage() {
 
   // Signed photos cache
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+
+  // Daily Attendance Management View State (Requirement 7)
+  const [dailyDate, setDailyDate] = useState<string>(todayLocal());
+  const [dailySearch, setDailySearch] = useState<string>("");
+  const [dailyStatusFilter, setDailyStatusFilter] = useState<string>("all");
+  const [viewingRecord, setViewingRecord] = useState<{
+    profile: { id: string; full_name: string; participant_code: string; email: string; phone: string; photo_path: string | null };
+    attendance?: { id: string; status: string; checked_in_at: string; method: string; marked_by: string | null; remarks?: string | null };
+  } | null>(null);
 
   // Sync settings into form
   useEffect(() => {
@@ -277,6 +288,55 @@ function AdminPage() {
       return matchesSearch && matchesStatus && matchesLowAtt;
     });
   }, [adminData?.participantRows, searchQuery, statusFilter, lowAttendanceOnly, settings]);
+
+  // Daily Attendance Filtered Rows for Selected Date (Requirement 7)
+  const dailyAttendanceStats = useMemo(() => {
+    if (!adminData) return { presentCount: 0, notMarkedCount: 0, totalApproved: 0, rate: 0, rows: [] };
+
+    const approvedProfiles = adminData.profiles.filter((p) => p.verification_status === "verified");
+    const attOnDate = adminData.attendance.filter((a) => a.day_date === dailyDate);
+    const attByUserId = new Map(attOnDate.map((a) => [a.user_id, a]));
+
+    const presentCount = attOnDate.filter((a) => a.status === "present").length;
+    const totalApproved = approvedProfiles.length;
+    const notMarkedCount = Math.max(0, totalApproved - presentCount);
+    const rate = totalApproved ? Math.round((presentCount / totalApproved) * 100) : 0;
+
+    const rows = approvedProfiles
+      .map((prof) => {
+        const att = attByUserId.get(prof.id);
+        return {
+          profile: prof,
+          attendance: att,
+          status: att?.status ?? "not_marked",
+        };
+      })
+      .filter((r) => {
+        const q = dailySearch.toLowerCase().trim();
+        const matchesSearch =
+          !q ||
+          r.profile.full_name.toLowerCase().includes(q) ||
+          r.profile.email.toLowerCase().includes(q) ||
+          r.profile.phone.includes(q) ||
+          r.profile.participant_code.toLowerCase().includes(q);
+
+        const matchesStatus =
+          dailyStatusFilter === "all" ||
+          (dailyStatusFilter === "present" && r.status === "present") ||
+          (dailyStatusFilter === "not_marked" && r.status === "not_marked") ||
+          (dailyStatusFilter === "pending" && r.status === "pending");
+
+        return matchesSearch && matchesStatus;
+      });
+
+    return {
+      presentCount,
+      notMarkedCount,
+      totalApproved,
+      rate,
+      rows,
+    };
+  }, [adminData, dailyDate, dailySearch, dailyStatusFilter]);
 
   // Handlers
   const handleGenerateQr = async () => {
@@ -464,12 +524,18 @@ function AdminPage() {
 
       {/* Main Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-6 h-auto p-1 bg-muted/60">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 h-auto p-1 bg-muted/60">
           <TabsTrigger value="overview" className="gap-1.5 py-2 text-xs">
             <BarChart3 className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
+          <TabsTrigger value="scanner" className="gap-1.5 py-2 text-xs font-bold text-primary">
+            <Camera className="h-3.5 w-3.5 text-primary" /> Scan QR
+          </TabsTrigger>
+          <TabsTrigger value="daily" className="gap-1.5 py-2 text-xs">
+            <Calendar className="h-3.5 w-3.5" /> Daily Attendance
+          </TabsTrigger>
           <TabsTrigger value="qr" className="gap-1.5 py-2 text-xs">
-            <QrCode className="h-3.5 w-3.5" /> Daily QR
+            <QrCode className="h-3.5 w-3.5" /> Projector QR
           </TabsTrigger>
           <TabsTrigger value="participants" className="gap-1.5 py-2 text-xs">
             <Users className="h-3.5 w-3.5" /> Participants ({totalRegistered})
@@ -629,6 +695,221 @@ function AdminPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* TAB: SCAN QR ATTENDANCE (Camera & Manual Scanner) */}
+        <TabsContent value="scanner" className="space-y-6">
+          <AdminQrScannerTab
+            workshopName={settings?.name}
+            onAttendanceConfirmed={() => void refetch()}
+          />
+        </TabsContent>
+
+        {/* TAB: DAILY ATTENDANCE MANAGEMENT (Requirement 7) */}
+        <TabsContent value="daily" className="space-y-6">
+          {/* Top Controls: Session Date Picker, Search & Status Filters */}
+          <Card className="shadow-sm border">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="font-display text-xl flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-primary" /> Daily Attendance Management
+                  </CardTitle>
+                  <CardDescription>
+                    Track real-time session presence, verify attendee portraits, and review check-in methods.
+                  </CardDescription>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select value={dailyDate} onValueChange={setDailyDate}>
+                    <SelectTrigger className="w-[180px] font-mono text-xs">
+                      <SelectValue placeholder="Select Session Date" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allDays.map((d, idx) => (
+                        <SelectItem key={d} value={d} className="font-mono text-xs">
+                          Day {idx + 1} ({d}) {d === today ? "— Today" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs font-semibold"
+                    onClick={() => {
+                      setManualTargetUser(adminData?.participantRows[0] ?? null);
+                      setManualDate(dailyDate);
+                      setManualModalOpen(true);
+                    }}
+                  >
+                    <Edit className="h-3.5 w-3.5" /> Manual Correction
+                  </Button>
+                </div>
+              </div>
+
+              {/* Filters Bar */}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search attendee by name, code, phone, or email…"
+                    value={dailySearch}
+                    onChange={(e) => setDailySearch(e.target.value)}
+                    className="pl-9 text-xs"
+                  />
+                </div>
+                <Select value={dailyStatusFilter} onValueChange={setDailyStatusFilter}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Attendance Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Attendees</SelectItem>
+                    <SelectItem value="present">Present ({dailyAttendanceStats.presentCount})</SelectItem>
+                    <SelectItem value="not_marked">Not Yet Marked ({dailyAttendanceStats.notMarkedCount})</SelectItem>
+                    <SelectItem value="pending">Pending Review</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+          </Card>
+
+          {/* 4 KPI Cards for the Selected Session Date */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Approved Participants</CardTitle>
+                <Users className="h-4 w-4 text-primary" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-display">{dailyAttendanceStats.totalApproved}</div>
+                <p className="text-[11px] text-muted-foreground mt-1">Eligible for attendance</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Present Count</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-display text-success">{dailyAttendanceStats.presentCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-1">Recorded on {dailyDate}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Not Yet Marked</CardTitle>
+                <Clock className="h-4 w-4 text-warning" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-display text-warning">{dailyAttendanceStats.notMarkedCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-1">Attendees still pending</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Attendance Percentage</CardTitle>
+                <TrendingUp className="h-4 w-4 text-primary" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-display">{dailyAttendanceStats.rate}%</div>
+                <p className="text-[11px] text-muted-foreground mt-1">Of approved attendees</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Daily Attendees Table */}
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display text-lg">Attendee Records for {dailyDate}</CardTitle>
+              <CardDescription>
+                Detailed list of approved participants and their verified attendance record.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
+                    <tr>
+                      <th className="py-3 px-4">Attendee</th>
+                      <th className="py-3 px-4">Contact</th>
+                      <th className="py-3 px-4">Session Status</th>
+                      <th className="py-3 px-4">Check-In Time</th>
+                      <th className="py-3 px-4">Method</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {!dailyAttendanceStats.rows.length ? (
+                      <tr>
+                        <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                          No attendee records match the search and filter criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      dailyAttendanceStats.rows.map((r) => {
+                        const prof = r.profile;
+                        const att = r.attendance;
+                        const photoUrl = prof.photo_path ? photoUrls[prof.photo_path] : undefined;
+
+                        return (
+                          <tr key={prof.id} className="hover:bg-muted/20">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-9 w-9 border">
+                                  <AvatarImage src={photoUrl} alt={prof.full_name} className="object-cover" />
+                                  <AvatarFallback className="font-bold text-xs bg-primary/10 text-primary">
+                                    {prof.full_name.slice(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-semibold text-foreground">{prof.full_name}</p>
+                                  <p className="text-xs text-muted-foreground font-mono">{prof.participant_code}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-xs font-mono">
+                              <p className="text-foreground">{prof.phone}</p>
+                              <p className="text-muted-foreground truncate max-w-[160px]">{prof.email}</p>
+                            </td>
+                            <td className="py-3 px-4">
+                              <StatusPill state={r.status === "present" ? "Present" : r.status === "pending" ? "Pending" : "Absent"} />
+                            </td>
+                            <td className="py-3 px-4 text-xs text-muted-foreground font-mono">
+                              {att?.checked_in_at ? new Date(att.checked_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+                            </td>
+                            <td className="py-3 px-4">
+                              {att?.method ? (
+                                <Badge variant="outline" className="text-[10px] uppercase font-mono bg-muted/30">
+                                  {att.method === "qr" || att.method === "qr_scan" ? "QR Scan" : att.method === "manual" ? "Manual Override" : att.method}
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs font-semibold gap-1 text-primary hover:text-primary"
+                                onClick={() => setViewingRecord({ profile: prof, attendance: att })}
+                              >
+                                <Eye className="h-3.5 w-3.5" /> Details
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* TAB 2: DAILY QR CODE SESSION */}
@@ -1452,6 +1733,89 @@ function AdminPage() {
           </DialogContent>
         </Dialog>
       )}
+      {/* Attendee Details & Photograph Modal (Requirement 7) */}
+      <Dialog open={!!viewingRecord} onOpenChange={(open) => !open && setViewingRecord(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Attendee Details & Verification</DialogTitle>
+            <DialogDescription>
+              Verified registration portrait and session attendance information.
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewingRecord && (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-4 p-4 rounded-xl border bg-muted/20">
+                <Avatar className="h-20 w-20 rounded-xl border-2 border-primary/20 shadow-sm shrink-0">
+                  <AvatarImage
+                    src={viewingRecord.profile.photo_path ? photoUrls[viewingRecord.profile.photo_path] : undefined}
+                    alt={viewingRecord.profile.full_name}
+                    className="object-cover"
+                  />
+                  <AvatarFallback className="font-bold text-lg bg-primary/10 text-primary">
+                    {viewingRecord.profile.full_name.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <h4 className="font-display font-bold text-base text-foreground truncate">
+                    {viewingRecord.profile.full_name}
+                  </h4>
+                  <p className="text-xs font-mono font-semibold text-primary">
+                    {viewingRecord.profile.participant_code}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">{viewingRecord.profile.phone}</p>
+                  <p className="text-xs text-muted-foreground truncate">{viewingRecord.profile.email}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 rounded-lg border bg-card space-y-1">
+                  <span className="text-muted-foreground">Session Date:</span>
+                  <p className="font-bold font-mono">{dailyDate}</p>
+                </div>
+                <div className="p-2.5 rounded-lg border bg-card space-y-1">
+                  <span className="text-muted-foreground">Status:</span>
+                  <p className="font-bold">
+                    {viewingRecord.attendance?.status ? viewingRecord.attendance.status.toUpperCase() : "NOT MARKED"}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-lg border bg-card space-y-1">
+                  <span className="text-muted-foreground">Check-in Time:</span>
+                  <p className="font-semibold">
+                    {viewingRecord.attendance?.checked_in_at
+                      ? new Date(viewingRecord.attendance.checked_in_at).toLocaleTimeString()
+                      : "Not checked in"}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-lg border bg-card space-y-1">
+                  <span className="text-muted-foreground">Method:</span>
+                  <p className="font-semibold">
+                    {viewingRecord.attendance?.method === "qr" || viewingRecord.attendance?.method === "qr_scan"
+                      ? "QR Scan"
+                      : viewingRecord.attendance?.method === "manual"
+                      ? "Authorized Manual Override"
+                      : viewingRecord.attendance?.method || "—"}
+                  </p>
+                </div>
+              </div>
+
+              {viewingRecord.attendance?.remarks && (
+                <div className="p-3 rounded-lg border bg-muted/40 text-xs">
+                  <span className="text-muted-foreground font-semibold">Remarks: </span>
+                  <span>{viewingRecord.attendance.remarks}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setViewingRecord(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Register New Participant Dialog */}
       <RegisterParticipantDialog
         open={registerDialogOpen}

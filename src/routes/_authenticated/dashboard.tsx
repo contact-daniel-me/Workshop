@@ -23,12 +23,15 @@ import {
   Lock,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { ParticipantAttendanceQrCard } from "@/components/dashboard/ParticipantAttendanceQrCard";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: DashboardPage,
 });
 
 function DashboardPage() {
+  const qc = useQueryClient();
   const { data: me } = useMe();
   const { data: settings } = useSettings();
   const { data: attData } = useMyAttendance();
@@ -238,39 +241,19 @@ function DashboardPage() {
             </Card>
           </div>
 
-          {/* Today's Attendance Check-In Card */}
-          <Card className="border-primary/30 bg-primary/5 shadow-sm">
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <CardTitle className="font-display text-xl flex items-center gap-2">
-                  <CalendarDays className="h-5 w-5 text-primary" /> Today's Session ({today})
-                </CardTitle>
-                <CardDescription>
-                  {isWorkshopDay
-                    ? "Attendance is scheduled for today. Scan the daily QR code to mark your presence."
-                    : "Today is not a scheduled workshop day."}
-                </CardDescription>
-              </div>
-
-              <div>
-                {todayRecord ? (
-                  <div className="flex items-center gap-3 bg-card px-4 py-2.5 rounded-xl border shadow-sm">
-                    <StatusPill state={todayRecord.status === "present" ? "Present" : "Pending"} />
-                    <div className="text-xs">
-                      <span className="text-muted-foreground">Checked in at: </span>
-                      <span className="font-semibold">{new Date(todayRecord.checked_in_at).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                ) : isWorkshopDay ? (
-                  <Button size="lg" className="gap-2 font-bold shadow-md" onClick={() => setScanModalOpen(true)}>
-                    <QrCode className="h-5 w-5" /> Mark Today's Attendance
-                  </Button>
-                ) : (
-                  <Badge variant="outline" className="text-muted-foreground">Session Closed</Badge>
-                )}
-              </div>
-            </CardHeader>
-          </Card>
+          {/* Prominent My Attendance QR Section */}
+          <ParticipantAttendanceQrCard
+            participantId={me?.user?.id}
+            fullName={me?.profile?.full_name}
+            participantCode={me?.profile?.participant_code}
+            photoUrl={photoUrl}
+            verificationStatus={me?.profile?.verification_status}
+            todayDate={today}
+            isWorkshopDay={isWorkshopDay}
+            onAttendanceUpdated={() => {
+              void qc.invalidateQueries({ queryKey: ["my_attendance"] });
+            }}
+          />
 
           {/* Attendance Calendar Grid */}
           <Card className="shadow-sm">
