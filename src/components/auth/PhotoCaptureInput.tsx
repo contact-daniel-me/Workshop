@@ -12,7 +12,7 @@ import {
   X,
   Sparkles,
 } from "lucide-react";
-import { validateClientImageFile } from "@/lib/image-validation";
+import { validateClientImageFile, optimizeImageFile } from "@/lib/image-validation";
 import { toast } from "sonner";
 
 export interface PhotoCaptureInputProps {
@@ -206,9 +206,10 @@ export function PhotoCaptureInput({
     if (!file) return;
 
     try {
-      // Validate magic bytes & size
-      await validateClientImageFile(file);
-      onChange(file);
+      // Auto-compress large phone photos to standard JPEG and validate magic bytes
+      const optimized = await optimizeImageFile(file);
+      await validateClientImageFile(optimized);
+      onChange(optimized);
       setMode("idle");
       toast.success("Photograph selected!");
     } catch (err: unknown) {

@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { appUniversalSignIn, normalizeAppPassword, phoneToAuthEmail } from "@/lib/auth-helpers";
-import { lookupProfileByPhone, type LookupProfileResult } from "@/lib/lookup.functions";
+import { lookupProfileByPhone, uploadRegistrationPhoto, type LookupProfileResult } from "@/lib/lookup.functions";
 import { INDIAN_PHONE, normalizePhone } from "@/lib/attendance";
 import { signedUrls } from "@/lib/use-me";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { PhotoCaptureInput } from "./PhotoCaptureInput";
-import { validateClientImageFile } from "@/lib/image-validation";
+import { validateClientImageFile, fileToBase64, optimizeImageFile } from "@/lib/image-validation";
 
 export type AuthMode = "login" | "register" | "lookup" | "forgot";
 
@@ -403,19 +403,23 @@ function RegisterForm({
           }
         }
 
-        // Upload photo to storage
+        // Upload photo securely via server function (bypasses storage RLS issues)
         if (data.user && photoFile) {
-          const ext = photoFile.name.split(".").pop()?.toLowerCase() || (photoFile.type === "image/png" ? "png" : photoFile.type === "image/webp" ? "webp" : "jpg");
-          const path = `${data.user.id}/profile-${Date.now()}.${ext}`;
-          const up = await supabase.storage.from("photos").upload(path, photoFile, {
-            contentType: photoFile.type || "image/jpeg",
-            upsert: true,
-          });
-          if (!up.error) {
-            await supabase.from("profiles").update({ photo_path: path }).eq("id", data.user.id);
-          } else {
-            console.error("Photo upload failed:", up.error);
-            toast.error("Account created, but photo upload encountered an issue: " + up.error.message);
+          try {
+            const photoBase64 = await fileToBase64(photoFile);
+            await uploadRegistrationPhoto({
+              data: {
+                userId: data.user.id,
+                photoBase64,
+              },
+            });
+          } catch (photoErr: unknown) {
+            console.error("Photo upload failed:", photoErr);
+            toast.error(
+              photoErr instanceof Error
+                ? photoErr.message
+                : "Photo upload issue, but account was registered."
+            );
           }
 
           const { data: profile } = await supabase

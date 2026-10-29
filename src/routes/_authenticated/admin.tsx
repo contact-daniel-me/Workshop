@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusPill } from "@/components/app/status";
 import {
   Users,
+  User,
   QrCode,
   ShieldCheck,
   FileSpreadsheet,

@@ -38,7 +38,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { registerParticipantByAdmin } from "@/lib/admin.functions";
-import { validateClientImageFile, fileToBase64 } from "@/lib/image-validation";
+import { validateClientImageFile, fileToBase64, optimizeImageFile } from "@/lib/image-validation";
 import { normalizePhone, INDIAN_PHONE } from "@/lib/attendance";
 
 interface RegisterParticipantDialogProps {
@@ -168,10 +168,11 @@ export function RegisterParticipantDialog({
     if (!file) return;
 
     try {
-      // Validate magic bytes & size (<= 5MB)
-      await validateClientImageFile(file);
-      setPhotoFile(file);
-      const previewUrl = URL.createObjectURL(file);
+      // Auto-compress large phone photos to standard JPEG & validate magic bytes
+      const optimized = await optimizeImageFile(file);
+      await validateClientImageFile(optimized);
+      setPhotoFile(optimized);
+      const previewUrl = URL.createObjectURL(optimized);
       setPhotoPreview(previewUrl);
       setErrors((prev) => {
         const copy = { ...prev };

@@ -97,3 +97,50 @@ export const lookupProfileByPhone = createServerFn({ method: "POST" })
     };
   });
 
+/**
+ * Server Function: Upload participant registration photograph safely via service role
+ * Solves RLS 403 AccessDenied errors when newly created participants upload their selfie.
+ */
+export const uploadRegistrationPhoto = createServerFn({ method: "POST" })
+  .validator((input: { userId: string; photoBase64: string }) => {
+    const userId = String(input.userId ?? "").trim();
+    let photoBase64 = String(input.photoBase64 ?? "").trim();
+    if (photoBase64.includes(",")) photoBase64 = photoBase64.split(",")[1]!;
+    if (!userId) throw new Error("User ID is required.");
+    if (!photoBase64) throw new Error("Photograph data is required.");
+    return { userId, photoBase64 };
+  })
+  .handler(async ({ data }) => {
+    const { userId, photoBase64 } = data;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { validateImageMagicBytes } = await import("./image-validation");
+
+    const buffer = Buffer.from(photoBase64, "base64");
+    const { ext, mime } = validateImageMagicBytes(buffer);
+
+    const photoPath = `${userId}/profile_${Date.now()}.${ext}`;
+    const { error: upErr } = await supabaseAdmin.storage
+      .from("photos")
+      .upload(photoPath, buffer, {
+        contentType: mime,
+        upsert: true,
+      });
+
+    if (upErr) {
+      console.error("Storage upload failed:", upErr);
+      throw new Error(`Failed to store photograph: ${upErr.message}`);
+    }
+
+    const { error: profErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ photo_path: photoPath })
+      .eq("id", userId);
+
+    if (profErr) {
+      console.error("Profile update failed:", profErr);
+      throw new Error(`Failed to link photo to profile: ${profErr.message}`);
+    }
+
+    return { ok: true, photoPath };
+  });
+
