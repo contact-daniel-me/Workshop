@@ -26,3 +26,4 @@ export function generateShortCode(): string {
   }
   return result;
 }
+

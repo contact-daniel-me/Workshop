@@ -39,26 +39,30 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const features = [
+const instructions = [
   {
-    Icon: QrCode,
-    t: "Daily Rotating QR Codes",
-    d: "Fresh, expiring code for each workshop day. One check-in per participant.",
+    step: "01",
+    Icon: Smartphone,
+    t: "Register Your Profile",
+    d: "Submit your full name, email, 10-digit mobile number, and capture a mandatory front-facing selfie photograph.",
   },
   {
+    step: "02",
     Icon: ShieldCheck,
-    t: "Admin Verification",
-    d: "Organiser review of profile photograph and verified attendance tracking.",
+    t: "Admin Review & Approval",
+    d: "Workshop administrators review your submitted details and photo before unlocking daily attendance check-in.",
   },
   {
+    step: "03",
+    Icon: QrCode,
+    t: "Show Daily Attendance QR",
+    d: "Sign in each workshop session to generate your secure daily rotating QR code and present it to the organizer.",
+  },
+  {
+    step: "04",
     Icon: CalendarDays,
-    t: "Attendance Calendar",
-    d: "Real-time overview of present, absent, and pending attendance sessions.",
-  },
-  {
-    Icon: FileSpreadsheet,
-    t: "Excel Attendance Reports",
-    d: "Instant export of master sheets, daily logs, and individual participation records.",
+    t: "Track Attendance & Reports",
+    d: "Monitor your session attendance status in real time and download your individual participation report anytime.",
   },
 ];
 
@@ -127,26 +131,33 @@ function Index() {
         </div>
       </section>
 
-      {/* Feature Highlights Section */}
+      {/* Instructions & Guidelines Section */}
       <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16 flex-1">
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <h2 className="font-display text-2xl sm:text-3xl font-bold">Portal Capabilities</h2>
+          <h2 className="font-display text-2xl sm:text-3xl font-bold">Instructions</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Complete workshop attendance management built with Supabase, dynamic QR, and real-time records.
+            Follow these essential steps to register, verify your profile, and record your workshop attendance.
           </p>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {features.map(({ Icon, t, d }) => (
+          {instructions.map(({ step, Icon, t, d }) => (
             <div
               key={t}
-              className="rounded-xl border bg-card p-6 shadow-sm hover:shadow-md transition-shadow"
+              className="rounded-xl border bg-card p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between"
             >
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-4">
-                <Icon className="h-5 w-5" />
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <span className="font-mono text-[11px] font-bold text-muted-foreground/75 bg-muted px-2 py-0.5 rounded-md">
+                    STEP {step}
+                  </span>
+                </div>
+                <h3 className="font-semibold text-base text-foreground">{t}</h3>
+                <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{d}</p>
               </div>
-              <h3 className="font-semibold text-base text-foreground">{t}</h3>
-              <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{d}</p>
             </div>
           ))}
         </div>
