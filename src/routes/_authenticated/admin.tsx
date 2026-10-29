@@ -23,7 +23,6 @@ import {
   reviewSelfieAttendance,
   updateWorkshopSettings,
   revokeQr,
-  toggleStaffRole,
 } from "@/lib/admin.functions";
 
 import { Button } from "@/components/ui/button";
@@ -1753,30 +1752,6 @@ function AdminPage() {
                 </div>
               </div>
 
-              {me?.isSuper && (
-                <div className="flex items-center justify-between border-t pt-4">
-                  <span className="text-xs font-semibold text-muted-foreground">Admin Privileges:</span>
-                  <Button
-                    size="sm"
-                    variant={adminData?.rolesByUser.get(selectedParticipant.id)?.includes("attendance_admin") ? "destructive" : "outline"}
-                    onClick={async () => {
-                      const hasAdmin = adminData?.rolesByUser.get(selectedParticipant.id)?.includes("attendance_admin");
-                      await toggleStaffRole({
-                        data: {
-                          targetUserId: selectedParticipant.id,
-                          makeStaff: !hasAdmin,
-                        },
-                      });
-                      toast.success(hasAdmin ? "Staff role removed" : "Promoted to Attendance Admin");
-                      await refetch();
-                    }}
-                  >
-                    {adminData?.rolesByUser.get(selectedParticipant.id)?.includes("attendance_admin")
-                      ? "Revoke Staff Role"
-                      : "Promote to Attendance Admin"}
-                  </Button>
-                </div>
-              )}
 
               {/* Account Management Actions */}
               <div className="flex items-center justify-between border-t pt-4">
