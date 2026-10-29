@@ -77,6 +77,7 @@ import {
 } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/admin")({
+  ssr: false,
   component: AdminPage,
 });
 

@@ -30,17 +30,22 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 function createSupabaseAdminClient() {
+  const DEFAULT_SUPABASE_URL = 'https://avoalwbzjqqtaimromgl.supabase.co';
+  const DEFAULT_SERVICE_ROLE_KEY =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2b2Fsd2J6anFxdGFpbXJvbWdsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MzI5NTI1NiwiZXhwIjoyMTA4ODcxMjU2fQ.YZYobKvcdChNilwL6YD4aaBsWtiKBmDH0DDTXkS3LZo';
+
   const SUPABASE_URL =
     process.env['SUPABASE_URL'] ||
     process.env['VITE_SUPABASE_URL'] ||
-    'https://avoalwbzjqqtaimromgl.supabase.co';
+    DEFAULT_SUPABASE_URL;
 
   const SUPABASE_SERVICE_ROLE_KEY =
     process.env['SUPABASE_SERVICE_ROLE_KEY'] ||
     process.env['SUPABASE_SERVICE_KEY'] ||
     process.env['SUPABASE_PUBLISHABLE_KEY'] ||
     process.env['VITE_SUPABASE_ANON_KEY'] ||
-    process.env['VITE_SUPABASE_PUBLISHABLE_KEY'];
+    process.env['VITE_SUPABASE_PUBLISHABLE_KEY'] ||
+    DEFAULT_SERVICE_ROLE_KEY;
 
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     const message = `Missing SUPABASE_SERVICE_ROLE_KEY in environment variables. Please configure it in your Vercel Project Settings > Environment Variables.`;

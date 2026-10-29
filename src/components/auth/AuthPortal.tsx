@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { appUniversalSignIn, normalizeAppPassword, phoneToAuthEmail } from "@/lib/auth-helpers";
 import { lookupProfileByPhone, type LookupProfileResult } from "@/lib/lookup.functions";
 import { INDIAN_PHONE, normalizePhone } from "@/lib/attendance";
+import { signedUrls } from "@/lib/use-me";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -627,6 +628,18 @@ function PhoneLookupView({
         res = await lookupProfileByPhone({ data: { phone: cleanPhone } });
       }
 
+      if (res?.found && res.profile) {
+        const path = res.profile.photoPath || (res.profile as unknown as { photo_path?: string }).photo_path;
+        if (path && !res.profile.photoUrl) {
+          try {
+            const map = await signedUrls("photos", [path]);
+            if (map[path]) res.profile.photoUrl = map[path];
+          } catch {
+            // photoUrl fallback
+          }
+        }
+      }
+
       setResult(res);
       if (!res?.found) {
         toast.error(res?.message || "No registered account found with that mobile number.");
@@ -673,7 +686,7 @@ function PhoneLookupView({
             <Avatar className="h-14 w-14 border-2 border-primary/20">
               <AvatarImage src={result.profile.photoUrl ?? undefined} />
               <AvatarFallback className="font-bold text-base bg-primary/10 text-primary">
-                {result.profile.fullName.slice(0, 2).toUpperCase()}
+                {result.profile.fullName ? result.profile.fullName.slice(0, 2).toUpperCase() : "SA"}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">

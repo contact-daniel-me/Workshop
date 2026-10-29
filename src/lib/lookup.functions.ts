@@ -13,6 +13,7 @@ export interface LookupProfileResult {
     verificationStatus: "pending" | "verified" | "rejected";
     createdAt: string;
     photoUrl?: string | null;
+    photoPath?: string | null;
     role: "super_admin" | "attendance_admin" | "participant";
   };
 }
@@ -90,6 +91,7 @@ export const lookupProfileByPhone = createServerFn({ method: "POST" })
         verificationStatus: profile.verification_status,
         createdAt: profile.created_at,
         photoUrl,
+        photoPath: profile.photo_path,
         role,
       },
     };

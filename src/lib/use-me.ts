@@ -25,14 +25,27 @@ export function useMe() {
   });
 }
 
+export const DEFAULT_WORKSHOP_SETTINGS: Settings & { id: number } = {
+  id: 1,
+  name: "Event Management Workshop",
+  start_date: todayLocal(),
+  duration_days: 30,
+  qr_validity_minutes: 15,
+  require_selfie: false,
+  low_attendance_threshold: 75,
+};
+
 export function useSettings() {
   return useQuery({
     queryKey: ["settings"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("workshop_settings").select("*").single();
-      if (error) throw error;
+      const { data, error } = await supabase.from("workshop_settings").select("*").maybeSingle();
+      if (error || !data) {
+        return DEFAULT_WORKSHOP_SETTINGS;
+      }
       return data as Settings & { id: number };
     },
+    placeholderData: DEFAULT_WORKSHOP_SETTINGS,
   });
 }
 

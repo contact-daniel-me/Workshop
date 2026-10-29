@@ -1,34 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { todayLocal, workshopDays } from "./attendance";
-import crypto from "node:crypto";
-
-/**
- * Generate cryptographically secure random token (48-char hex)
- */
-export function generateSecureToken(bytes = 24): string {
-  return crypto.randomBytes(bytes).toString("hex");
-}
-
-/**
- * Hash token using SHA-256 for secure storage & fast indexed lookup
- */
-export function hashToken(token: string): string {
-  return crypto.createHash("sha256").update(token.trim()).digest("hex");
-}
-
-/**
- * 6-character human-friendly uppercase alphanumeric short code
- */
-export function generateShortCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = crypto.randomBytes(6);
-  let result = "";
-  for (let i = 0; i < 6; i++) {
-    result += chars[bytes[i]! % chars.length];
-  }
-  return result;
-}
 
 export interface ParticipantQrResponse {
   ok: boolean;
@@ -179,6 +151,7 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
       .is("used_at" as never, null);
 
     // 7. Generate a new cryptographically secure token
+    const { generateSecureToken, hashToken, generateShortCode } = await import("./attendance-qr.crypto");
     const token = generateSecureToken(32);
     const token_hash = hashToken(token);
     const short_code = generateShortCode();
@@ -316,6 +289,7 @@ export const verifyParticipantQr = createServerFn({ method: "POST" })
       };
     }
 
+    const { hashToken } = await import("./attendance-qr.crypto");
     const token_h = hashToken(token);
     const today = todayLocal();
 
@@ -526,6 +500,7 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
     }
 
     const { token } = input;
+    const { hashToken } = await import("./attendance-qr.crypto");
     const token_h = hashToken(token);
     const today = todayLocal();
     const nowIso = new Date().toISOString();

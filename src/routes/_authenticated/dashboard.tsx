@@ -27,6 +27,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ParticipantAttendanceQrCard } from "@/components/dashboard/ParticipantAttendanceQrCard";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
+  ssr: false,
   component: DashboardPage,
 });
 

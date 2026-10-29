@@ -3,6 +3,7 @@ import { AuthPortal, type AuthMode } from "@/components/auth/AuthPortal";
 import { QrCode } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
+  ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({
     mode: (["login", "register", "lookup", "forgot"].includes(s["mode"] as string)
       ? s["mode"]
