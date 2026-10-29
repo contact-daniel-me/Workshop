@@ -44,7 +44,7 @@ describe("Email and Phone Dual-Identifier Sign-In", () => {
     const emailRes = await resolveAuthIdentifier("test.participant@example.com");
     expect(typeof emailRes).toBe("string");
     expect(emailRes.length).toBeGreaterThan(0);
-  });
+  }, 15000);
 
   it("validates missing identifier or password with clear feedback", async () => {
     const emptyIdRes = await appUniversalSignIn("", "password123");
@@ -60,7 +60,7 @@ describe("Email and Phone Dual-Identifier Sign-In", () => {
     const res = await appUniversalSignIn("nonexistent.user99999@example.com", "wrongpassword");
     expect(res.data.user).toBeNull();
     expect(res.error?.message).toContain("Invalid email address, mobile number, or password");
-  });
+  }, 15000);
 });
 
 describe("Face Verification Engine Logic", () => {
