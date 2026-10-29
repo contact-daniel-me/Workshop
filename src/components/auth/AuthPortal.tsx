@@ -21,7 +21,10 @@ import {
   Mail,
   Lock,
   Camera,
+  RefreshCw,
 } from "lucide-react";
+import { PhotoCaptureInput } from "./PhotoCaptureInput";
+import { validateClientImageFile } from "@/lib/image-validation";
 
 export type AuthMode = "login" | "register" | "lookup" | "forgot";
 
@@ -252,6 +255,7 @@ function RegisterForm({
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [registeredCode, setRegisteredCode] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
 
   // Phone lookup preview state
   const [phoneInput, setPhoneInput] = useState("");
@@ -319,22 +323,35 @@ function RegisterForm({
         const phone = normalizePhone(String(f.get("phone") ?? ""));
         const email = String(f.get("email") ?? "").trim().toLowerCase();
         const pw = String(f.get("password") ?? "");
-        const photo = f.get("photo") as File | null;
 
         const errs: Record<string, string> = {};
-        if (name.length < 2 || name.length > 100) errs["name"] = "Enter your full name.";
-        if (!INDIAN_PHONE.test(phone)) errs["phone"] = "Enter a valid 10-digit mobile number.";
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs["email"] = "Enter a valid email address.";
-        if (!pw) errs["password"] = "Password is required.";
-        if (!photo || !photo.size) errs["photo"] = "A clear profile photo is required.";
-        else if (!["image/jpeg", "image/png", "image/webp"].includes(photo.type)) {
-          errs["photo"] = "Use a JPG, PNG or WebP image.";
-        } else if (photo.size > 5 * 1024 * 1024) {
-          errs["photo"] = "Photograph must be under 5 MB.";
+        if (!name || name.length < 2 || name.length > 100) {
+          errs["name"] = "Full name is required (2–100 characters).";
+        }
+        if (!phone || !INDIAN_PHONE.test(phone)) {
+          errs["phone"] = "Enter a valid 10-digit mobile number.";
+        }
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          errs["email"] = "Enter a valid email address.";
+        }
+        if (!pw || pw.length < 8) {
+          errs["password"] = "Password must be at least 8 characters long.";
+        }
+        if (!photoFile) {
+          errs["photo"] = "A clear profile photograph is required. Please upload or take a photo.";
+        } else {
+          try {
+            await validateClientImageFile(photoFile);
+          } catch (imgErr: unknown) {
+            errs["photo"] = imgErr instanceof Error ? imgErr.message : "Invalid photograph.";
+          }
         }
 
         setErrors(errs);
-        if (Object.keys(errs).length) return;
+        if (Object.keys(errs).length) {
+          toast.error("Please fill in all mandatory fields marked with an asterisk (*).");
+          return;
+        }
 
         setBusy(true);
 
@@ -386,12 +403,18 @@ function RegisterForm({
         }
 
         // Upload photo to storage
-        if (data.user && photo) {
-          const ext = photo.type.split("/")[1] || "jpg";
+        if (data.user && photoFile) {
+          const ext = photoFile.name.split(".").pop()?.toLowerCase() || (photoFile.type === "image/png" ? "png" : photoFile.type === "image/webp" ? "webp" : "jpg");
           const path = `${data.user.id}/profile-${Date.now()}.${ext}`;
-          const up = await supabase.storage.from("photos").upload(path, photo);
+          const up = await supabase.storage.from("photos").upload(path, photoFile, {
+            contentType: photoFile.type || "image/jpeg",
+            upsert: true,
+          });
           if (!up.error) {
             await supabase.from("profiles").update({ photo_path: path }).eq("id", data.user.id);
+          } else {
+            console.error("Photo upload failed:", up.error);
+            toast.error("Account created, but photo upload encountered an issue: " + up.error.message);
           }
 
           const { data: profile } = await supabase
@@ -413,6 +436,12 @@ function RegisterForm({
         <p className="mt-1 text-xs text-muted-foreground">
           Register your participant profile for workshop attendance.
         </p>
+      </div>
+
+      {/* Mandatory fields alert banner */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-2.5 text-xs text-amber-900 flex items-center gap-2 font-medium">
+        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+        <span>All fields marked with an asterisk (<span className="text-destructive font-bold">*</span>) are required.</span>
       </div>
 
       {/* If existing profile is found by phone number, show details card */}
@@ -461,7 +490,17 @@ function RegisterForm({
         </div>
       )}
 
-      <Field label="Mobile Number (Login Identifier)" error={errors["phone"]}>
+      <Field label="Full Name" required error={errors["name"]}>
+        <Input
+          name="name"
+          placeholder="e.g. Rahul Sharma"
+          defaultValue={existingProfile?.fullName ?? ""}
+          required
+          maxLength={100}
+        />
+      </Field>
+
+      <Field label="Mobile Number (Login Identifier)" required error={errors["phone"]}>
         <div className="relative">
           <Input
             name="phone"
@@ -480,17 +519,7 @@ function RegisterForm({
         </div>
       </Field>
 
-      <Field label="Full Name" error={errors["name"]}>
-        <Input
-          name="name"
-          placeholder="e.g. Rahul Sharma"
-          defaultValue={existingProfile?.fullName ?? ""}
-          required
-          maxLength={100}
-        />
-      </Field>
-
-      <Field label="Email Address" error={errors["email"]}>
+      <Field label="Email Address" required error={errors["email"]}>
         <Input
           name="email"
           type="email"
@@ -500,16 +529,42 @@ function RegisterForm({
         />
       </Field>
 
-      <Field label="Password" error={errors["password"]}>
-        <Input name="password" type="password" placeholder="Choose a password" required />
+      <Field label="Password" required error={errors["password"]}>
+        <Input
+          name="password"
+          type="password"
+          placeholder="At least 8 characters"
+          required
+          minLength={8}
+        />
       </Field>
 
-      <Field label="Profile Photograph (Front-facing selfie)" error={errors["photo"]}>
-        <Input name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="user" required />
+      <Field label="Profile Photograph (Front-facing selfie)" required error={errors["photo"]}>
+        <PhotoCaptureInput
+          value={photoFile}
+          onChange={(file) => {
+            setPhotoFile(file);
+            if (file) {
+              setErrors((prev) => {
+                const next = { ...prev };
+                delete next.photo;
+                return next;
+              });
+            }
+          }}
+          error={errors["photo"]}
+          disabled={busy}
+        />
       </Field>
 
       <Button type="submit" className="w-full font-bold py-5 mt-2" disabled={busy}>
-        {busy ? "Registering account…" : "Submit Registration"}
+        {busy ? (
+          <span className="flex items-center justify-center gap-2">
+            <RefreshCw className="h-4 w-4 animate-spin" /> Registering account…
+          </span>
+        ) : (
+          "Submit Registration"
+        )}
       </Button>
 
       <p className="text-center text-xs text-muted-foreground pt-1">
@@ -740,15 +795,20 @@ function ForgotPassword({ setMode }: { setMode: (m: AuthMode) => void }) {
 function Field({
   label,
   error,
+  required,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   error?: string;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1">
-      <Label className="text-xs font-semibold">{label}</Label>
+      <Label className="text-xs font-semibold flex items-center gap-1">
+        <span>{label}</span>
+        {required && <span className="text-destructive font-bold">*</span>}
+      </Label>
       {children}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
