@@ -54,7 +54,9 @@ import {
   Edit,
   History,
   ShieldAlert,
+  UserPlus,
 } from "lucide-react";
+import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -93,6 +95,7 @@ function AdminPage() {
   const [lowAttendanceOnly, setLowAttendanceOnly] = useState(false);
 
   // Modals State
+  const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<ParticipantRow | null>(null);
   const [manualModalOpen, setManualModalOpen] = useState(false);
   const [manualTargetUser, setManualTargetUser] = useState<ParticipantRow | null>(null);
@@ -765,7 +768,14 @@ function AdminPage() {
                     Review registration status, attendance percentages, and manage participant records.
                   </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setRegisterDialogOpen(true)}
+                    className="gap-2 font-bold shadow-xs"
+                  >
+                    <UserPlus className="h-4 w-4" /> Register New Participant
+                  </Button>
                   <Button size="sm" variant="outline" onClick={handleExportFiltered} className="gap-2">
                     <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Export Filtered (.xlsx)
                   </Button>
@@ -1442,6 +1452,15 @@ function AdminPage() {
           </DialogContent>
         </Dialog>
       )}
+      {/* Register New Participant Dialog */}
+      <RegisterParticipantDialog
+        open={registerDialogOpen}
+        onOpenChange={setRegisterDialogOpen}
+        onSuccess={() => {
+          refetch();
+        }}
+        canApprove={me?.isStaff ?? false}
+      />
     </div>
   );
 }

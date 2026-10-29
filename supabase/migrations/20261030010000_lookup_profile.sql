@@ -83,3 +83,4 @@ end;
 $$;
 
 grant execute on function public.lookup_profile_by_phone(text) to anon, authenticated, service_role;
+
