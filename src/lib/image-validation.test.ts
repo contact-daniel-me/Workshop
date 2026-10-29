@@ -37,3 +37,4 @@ describe("validateImageMagicBytes", () => {
     expect(() => validateImageMagicBytes(tooSmall)).toThrow(/too small/);
   });
 });
+

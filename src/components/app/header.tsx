@@ -19,7 +19,7 @@ export function AppHeader() {
     <header className="sticky top-0 z-30 border-b bg-card/90 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
         <Link to="/" className="flex items-center gap-2 font-display text-lg font-bold text-primary">
-          <QrCode className="h-5 w-5" /> SmartAttend
+          <QrCode className="h-5 w-5" /> Event Management Portal
         </Link>
         <nav className="flex gap-1 text-sm">
           <Link to="/dashboard" className="rounded-md px-3 py-1.5 hover:bg-muted" activeProps={{ className: "bg-muted font-semibold" }}>

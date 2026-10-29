@@ -41,3 +41,4 @@ describe("Admin Register Participant Validation & Helpers", () => {
     expect(emailRegex.test("missing@domain")).toBe(false);
   });
 });
+

@@ -259,7 +259,7 @@ export function RegisterParticipantDialog({
   const handleCopyCredentials = () => {
     if (!createdParticipant) return;
     const text = [
-      `Workshop Attendance Portal — Account Credentials`,
+      `Event Management Portal — Account Credentials`,
       `Participant Name: ${createdParticipant.fullName}`,
       `Participant ID: ${createdParticipant.participantCode}`,
       `Mobile Number: ${createdParticipant.phone}`,
@@ -694,3 +694,4 @@ export function RegisterParticipantDialog({
     </Dialog>
   );
 }
+

@@ -13,10 +13,10 @@ export const Route = createFileRoute("/auth")({
   }),
   head: () => ({
     meta: [
-      { title: "Sign in or Register — Attendance Portal" },
+      { title: "Sign in or Register — Event Management Portal" },
       {
         name: "description",
-        content: "Email and mobile phone login and registration for Workshop Attendance Management.",
+        content: "Email and mobile phone login and registration for Event Management Portal.",
       },
     ],
   }),
@@ -31,17 +31,17 @@ function AuthPage() {
       {/* Left hero panel */}
       <div className="hidden bg-hero p-12 text-primary-foreground lg:flex lg:flex-col lg:justify-between">
         <Link to="/" className="flex items-center gap-2 font-display text-xl font-bold">
-          <QrCode className="h-6 w-6" /> Attendance Portal
+          <QrCode className="h-6 w-6" /> Event Management Portal
         </Link>
         <div className="space-y-4 max-w-md">
           <h2 className="font-display text-3xl font-bold leading-tight">
-            Workshop Attendance Management
+            Event Management Portal
           </h2>
           <p className="text-sm opacity-85 leading-relaxed">
             Sign in with your email or mobile number, scan daily rotating QR codes, and track verified attendance in real time.
           </p>
         </div>
-        <p className="text-xs opacity-75">Workshop Attendance Management Portal</p>
+        <p className="text-xs opacity-75">Event Management Portal</p>
       </div>
 
       {/* Right form panel */}

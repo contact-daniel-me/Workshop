@@ -58,7 +58,7 @@ export async function generate30DayWorkbook(
   participants: ParticipantRow[],
 ): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = settings.name || "Attendance Portal";
+  wb.creator = settings.name || "Event Management Portal";
   wb.created = new Date();
 
   const days = workshopDays(settings);
@@ -189,7 +189,7 @@ export async function generateDailyReportWorkbook(
   }>,
 ): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Attendance Portal";
+  wb.creator = "Event Management Portal";
 
   const ws = wb.addWorksheet(`Daily Attendance ${date}`, {
     views: [{ state: "frozen", ySplit: 1 }],
@@ -235,7 +235,7 @@ export async function generateIndividualReportWorkbook(
   settings: Settings,
 ): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Attendance Portal";
+  wb.creator = "Event Management Portal";
 
   const ws = wb.addWorksheet(`${participant.participant_code} Report`, {
     views: [{ state: "frozen", ySplit: 6 }],

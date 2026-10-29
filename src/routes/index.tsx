@@ -21,15 +21,15 @@ export const Route = createFileRoute("/")({
   }),
   head: () => ({
     meta: [
-      { title: "Attendance Portal — Sign In, Register & View Details" },
+      { title: "Event Management Portal — Sign In, Register & View Details" },
       {
         name: "description",
-        content: "Workshop Attendance Portal: Sign in with mobile number, register participant account, or lookup details.",
+        content: "Event Management Portal: Sign in with mobile number, register participant account, or lookup details.",
       },
-      { property: "og:title", content: "Attendance Portal" },
+      { property: "og:title", content: "Event Management Portal" },
       {
         property: "og:description",
-        content: "Workshop Attendance Portal: Sign in with mobile number, register participant account, or lookup details.",
+        content: "Event Management Portal: Sign in with mobile number, register participant account, or lookup details.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -74,7 +74,7 @@ function Index() {
             <div className="lg:col-span-7 space-y-6">
               <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-semibold backdrop-blur-xs">
                 <QrCode className="h-4 w-4" />
-                Workshop Attendance Portal
+                Event Management Portal
               </div>
 
               <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight">

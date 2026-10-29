@@ -1,6 +1,6 @@
-# Workshop Attendence
+# Event Management Portal
 
-Complete web-based workshop attendance management system built with React, TypeScript, TanStack Start, Tailwind CSS, and Supabase.
+Complete web-based event and workshop attendance management system built with React, TypeScript, TanStack Start, Tailwind CSS, and Supabase.
 
 ## Features
 
