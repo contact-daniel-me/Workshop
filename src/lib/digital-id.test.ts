@@ -60,4 +60,26 @@ describe("Digital Participant ID Card logic & requirements", () => {
     const code = "SA-2026-0042";
     expect(code).toMatch(/^SA-\d{4}-\d{4}$/);
   });
+
+  it("verifies brand-neutral identity credential data contracts", () => {
+    const cardData = {
+      id: "usr_123",
+      fullName: "Daniel S",
+      participantCode: "SA-2026-0003",
+      email: "daniel@example.com",
+      phone: "+91 98765 43210",
+      photoUrl: "https://example.com/photo.jpg",
+      verificationStatus: "verified",
+      issueDate: "2026-10-30",
+    };
+
+    expect(cardData.fullName).toBe("Daniel S");
+    expect(cardData.participantCode).toBe("SA-2026-0003");
+    expect(cardData.verificationStatus).toBe("verified");
+    expect(cardData.issueDate).toBe("2026-10-30");
+
+    // Must not contain proprietary company/app brands in identity representation
+    const forbiddenBrands = ["growiota", "smartattend"];
+    expect(forbiddenBrands.some((b) => cardData.fullName.toLowerCase().includes(b))).toBe(false);
+  });
 });

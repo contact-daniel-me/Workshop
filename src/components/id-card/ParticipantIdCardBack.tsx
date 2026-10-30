@@ -1,5 +1,4 @@
 import React from "react";
-import { Badge } from "@/components/ui/badge";
 import { type ParticipantIdCardData } from "./ParticipantIdCardFront";
 import {
   QrCode,
@@ -7,10 +6,7 @@ import {
   Clock,
   AlertCircle,
   RefreshCw,
-  Mail,
-  Phone,
   RotateCw,
-  TrendingUp,
 } from "lucide-react";
 
 export interface ParticipantAttendanceStats {
@@ -50,173 +46,147 @@ export function ParticipantIdCardBack({
 }: Props) {
   const isApproved = data.verificationStatus === "verified";
   const isAlreadyPresent = qrStatus === "ALREADY_PRESENT";
-  const isLockedUntilNoon = qrStatus === "LOCKED_UNTIL_SESSION_TIME";
+  const isLockedUntilMidnight = qrStatus === "LOCKED_UNTIL_SESSION_TIME";
   const isNoSession = qrStatus === "NO_SESSION_SCHEDULED";
 
-  const attendanceRate = stats ? Math.round(stats.currentPct) : 0;
-
   return (
-    <div className="relative w-full max-w-[360px] sm:max-w-[380px] min-h-[560px] sm:min-h-[580px] rounded-3xl bg-gradient-to-br from-slate-950 via-[#062622] to-[#032924] text-white border-2 border-emerald-500/40 shadow-2xl p-5 sm:p-6 flex flex-col justify-between overflow-hidden select-none">
-      {/* Background Micro-patterns */}
-      <div className="absolute inset-0 opacity-[0.03] bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
-
-      {/* Top Security Access Ribbon / Magnetic Strip */}
-      <div className="relative z-10 space-y-2">
-        <div className="h-7 w-full rounded-lg bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-700/60 flex items-center justify-between px-3 shadow-inner">
-          <span className="font-mono text-[9px] tracking-widest text-emerald-400 font-bold">
-            ACCESS // {data.participantCode}
-          </span>
-          <span className="font-mono text-[9px] text-slate-400">ENCRYPTED ID</span>
-        </div>
+    <div className="relative w-full max-w-[340px] sm:max-w-[360px] min-h-[520px] sm:min-h-[540px] rounded-2xl bg-white text-[#263445] border border-[#E2E8F0] shadow-xl p-7 flex flex-col justify-between overflow-hidden select-none font-sans">
+      {/* Top Header: Participant ID & Scanning Instruction */}
+      <div className="text-center space-y-1 border-b border-[#F4F6F8] pb-3">
+        <p className="font-mono text-xs font-semibold text-[#172B45] tracking-wider">
+          {data.participantCode}
+        </p>
+        <p className="text-[10px] font-semibold tracking-[0.2em] uppercase text-[#64748B]">
+          SCAN TO VERIFY IDENTITY
+        </p>
       </div>
 
-      {/* Center Dynamic QR Code Access Box */}
-      <div className="relative z-10 flex flex-col items-center justify-center my-auto py-2 space-y-2.5">
-        <div className="w-full max-w-[240px] bg-white rounded-2xl p-3.5 shadow-2xl flex flex-col items-center justify-center text-slate-900 space-y-2 border-2 border-emerald-400/30">
+      {/* Center: Large Scannable Dynamic QR Code & Status */}
+      <div className="flex flex-col items-center justify-center my-auto py-3 space-y-3">
+        {/* Crisp QR Frame with Generous Quiet Zone */}
+        <div className="w-52 h-52 sm:w-56 sm:h-56 p-3 bg-white rounded-xl border border-[#E2E8F0] shadow-xs flex flex-col items-center justify-center">
           {loadingQr ? (
-            <div className="h-44 w-44 rounded-xl bg-slate-100 flex flex-col items-center justify-center gap-2">
-              <RefreshCw className="h-6 w-6 animate-spin text-emerald-600" />
-              <span className="text-[11px] font-medium text-slate-500 font-mono">Loading QR…</span>
+            <div className="flex flex-col items-center justify-center gap-2 text-[#64748B]">
+              <RefreshCw className="h-6 w-6 animate-spin text-[#172B45]" />
+              <span className="text-xs font-mono">Generating QR…</span>
             </div>
           ) : isAlreadyPresent ? (
-            <div className="h-44 w-44 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col items-center justify-center p-3 text-center space-y-2">
-              <CheckCircle2 className="h-10 w-10 text-emerald-600" />
-              <p className="font-bold text-xs text-emerald-900 font-display">Attendance Marked</p>
-              <Badge className="bg-emerald-600 text-white font-mono text-[9px] uppercase px-2 py-0.5">
-                Present Today
-              </Badge>
-              <p className="text-[10px] text-slate-500">Verified for today's session</p>
+            <div className="flex flex-col items-center justify-center text-center p-3 space-y-2">
+              <div className="h-12 w-12 rounded-full bg-[#00A878]/10 text-[#00A878] flex items-center justify-center">
+                <CheckCircle2 className="h-7 w-7" />
+              </div>
+              <p className="font-bold text-sm text-[#172B45]">Attendance Recorded</p>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#00A878]/10 text-[#00A878]">
+                Verified Present Today
+              </span>
             </div>
-          ) : isLockedUntilNoon ? (
-            <div className="h-44 w-44 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-3 text-center space-y-1.5">
-              <Clock className="h-8 w-8 text-primary" />
-              <p className="font-bold text-xs text-slate-800 font-display">Opens at 12:00 AM</p>
+          ) : isLockedUntilMidnight ? (
+            <div className="flex flex-col items-center justify-center text-center p-3 space-y-1.5">
+              <Clock className="h-8 w-8 text-[#64748B]" />
+              <p className="font-bold text-xs text-[#172B45]">Next Session at 12:00 AM</p>
               {unlockTimeFormatted && (
-                <div className="font-mono font-bold text-xs text-primary bg-primary/10 px-2 py-1 rounded-md">
+                <div className="font-mono font-medium text-xs text-[#172B45] bg-[#F4F6F8] px-2.5 py-1 rounded-md border border-[#E2E8F0]">
                   {unlockTimeFormatted}
                 </div>
               )}
-              <p className="text-[9px] text-slate-500 leading-tight">Session unlocks at 12:00 AM</p>
             </div>
           ) : !isApproved ? (
-            <div className="h-44 w-44 rounded-xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center p-3 text-center space-y-2">
-              <Clock className="h-8 w-8 text-amber-600" />
-              <p className="font-bold text-xs text-amber-900 font-display">Approval Required</p>
-              <p className="text-[10px] text-amber-700">QR code locked until registration approved.</p>
+            <div className="flex flex-col items-center justify-center text-center p-3 space-y-1.5">
+              <AlertCircle className="h-8 w-8 text-amber-500" />
+              <p className="font-bold text-xs text-[#172B45]">Pending Approval</p>
+              <p className="text-[11px] text-[#64748B] leading-tight">
+                QR activates once account is approved.
+              </p>
             </div>
           ) : isNoSession ? (
-            <div className="h-44 w-44 rounded-xl bg-slate-100 flex flex-col items-center justify-center p-3 text-center space-y-1">
-              <AlertCircle className="h-8 w-8 text-slate-400" />
-              <p className="font-bold text-xs text-slate-700">No Session Today</p>
-              <p className="text-[10px] text-slate-500">Check event calendar.</p>
+            <div className="flex flex-col items-center justify-center text-center p-3 space-y-1">
+              <AlertCircle className="h-8 w-8 text-[#64748B]" />
+              <p className="font-bold text-xs text-[#172B45]">No Session Today</p>
+              <p className="text-[11px] text-[#64748B]">Scheduled days only.</p>
             </div>
           ) : qrDataUrl ? (
-            <div className="flex flex-col items-center space-y-1.5">
+            <div className="flex flex-col items-center justify-center">
               <img
                 src={qrDataUrl}
-                alt="Participant Daily Attendance QR"
-                className="h-40 w-40 object-contain rounded-lg"
+                alt={`Identity QR Code for ${data.participantCode}`}
+                className="h-44 w-44 sm:h-48 sm:w-48 object-contain"
               />
-              <div className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-800 font-semibold">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>{qrTimeLeftFormatted ? `Valid: ${qrTimeLeftFormatted}` : "Daily Dynamic QR"}</span>
-              </div>
             </div>
           ) : (
-            <div className="h-44 w-44 rounded-xl bg-slate-50 flex flex-col items-center justify-center p-3 text-center space-y-2">
-              <QrCode className="h-8 w-8 text-slate-400" />
-              <p className="text-xs text-slate-600 font-medium">QR unavailable</p>
+            <div className="flex flex-col items-center justify-center text-center p-3 space-y-1.5">
+              <QrCode className="h-8 w-8 text-[#64748B]" />
+              <p className="text-xs text-[#64748B]">QR code unavailable</p>
               {onRefreshQr && (
                 <button
                   type="button"
                   onClick={onRefreshQr}
-                  className="text-[10px] text-emerald-600 font-bold hover:underline"
+                  className="text-xs text-[#172B45] font-semibold hover:underline"
                 >
-                  Click to generate
+                  Generate QR
                 </button>
               )}
             </div>
           )}
+        </div>
 
-          {/* Backup Short Code */}
+        {/* QR Expiration / Validity Information & Backup Token */}
+        <div className="flex flex-col items-center space-y-1">
+          {qrDataUrl && qrTimeLeftFormatted && !isAlreadyPresent && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F4F6F8] border border-[#E2E8F0] text-[11px] font-mono text-[#64748B]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#00A878] animate-pulse" />
+              <span>Expires in {qrTimeLeftFormatted}</span>
+            </div>
+          )}
+
           {qrShortCode && !isAlreadyPresent && isApproved && (
-            <div className="w-full text-center border-t border-slate-200 pt-1.5 flex items-center justify-between px-2">
-              <span className="text-[9px] font-mono text-slate-500">Backup Code:</span>
-              <span className="font-mono font-extrabold text-xs tracking-wider text-emerald-800">
-                {qrShortCode}
-              </span>
+            <div className="text-[11px] font-mono text-[#64748B]">
+              Code: <span className="font-bold text-[#172B45]">{qrShortCode}</span>
             </div>
           )}
         </div>
 
-        {/* Live Attendance Rate Ring & Breakdown (Requirement 3) */}
+        {/* Optional Attendance Verification Summary (Universal, No Event Names) */}
         {stats && (
-          <div className="w-full bg-emerald-950/60 border border-emerald-500/30 rounded-2xl p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-emerald-400" />
-                <span className="text-xs font-bold text-white">Attendance Rate</span>
-              </div>
-              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-mono text-xs font-extrabold">
-                {attendanceRate}%
-              </Badge>
+          <div className="w-full bg-[#F4F6F8] rounded-xl p-2.5 border border-[#E2E8F0] text-center">
+            <div className="flex items-center justify-between text-xs text-[#64748B] mb-1">
+              <span className="font-medium">Verified Attendance</span>
+              <span className="font-mono font-bold text-[#172B45]">
+                {Math.round(stats.currentPct)}%
+              </span>
             </div>
-
-            {/* Visual Attendance Progress Bar */}
-            <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden border border-emerald-500/20">
-              <div
-                className="bg-gradient-to-r from-teal-400 to-emerald-400 h-full rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, Math.max(0, attendanceRate))}%` }}
-              />
-            </div>
-
-            {/* 3-Column Stats Grid */}
-            <div className="grid grid-cols-3 gap-1.5 pt-1 text-center font-mono">
-              <div className="bg-card/40 border border-emerald-500/20 rounded-lg p-1.5">
-                <span className="text-[9px] text-slate-400 block uppercase font-sans">Present</span>
-                <span className="text-xs font-bold text-emerald-300">{stats.present}d</span>
+            <div className="grid grid-cols-3 gap-1 text-center text-xs font-mono border-t border-slate-200/60 pt-1.5">
+              <div>
+                <span className="text-[9px] text-[#64748B] block font-sans">Present</span>
+                <span className="font-semibold text-[#00A878]">{stats.present}d</span>
               </div>
-              <div className="bg-card/40 border border-emerald-500/20 rounded-lg p-1.5">
-                <span className="text-[9px] text-slate-400 block uppercase font-sans">Absent</span>
-                <span className="text-xs font-bold text-rose-300">{stats.absent}d</span>
+              <div>
+                <span className="text-[9px] text-[#64748B] block font-sans">Absent</span>
+                <span className="font-semibold text-rose-600">{stats.absent}d</span>
               </div>
-              <div className="bg-card/40 border border-emerald-500/20 rounded-lg p-1.5">
-                <span className="text-[9px] text-slate-400 block uppercase font-sans">Eligible</span>
-                <span className="text-xs font-bold text-slate-200">{stats.eligible}d</span>
+              <div>
+                <span className="text-[9px] text-[#64748B] block font-sans">Eligible</span>
+                <span className="font-semibold text-[#263445]">{stats.eligible}d</span>
               </div>
             </div>
           </div>
         )}
-
-        {/* Contact Info */}
-        <div className="w-full space-y-1 text-left px-1 text-[11px] text-slate-300">
-          <div className="flex items-center gap-1.5 truncate">
-            <Mail className="h-3 w-3 text-emerald-400 shrink-0" />
-            <span className="truncate">{data.email}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Phone className="h-3 w-3 text-emerald-400 shrink-0" />
-            <span className="font-mono text-[10px]">{data.phone}</span>
-          </div>
-        </div>
       </div>
 
-      {/* Card Back Footer */}
-      <div className="relative z-10 pt-2 border-t border-emerald-500/20 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-        <span className="truncate max-w-[200px]">GrowIOTA SmartAttend</span>
+      {/* Bottom Footer: Flip Back Action */}
+      <div className="pt-3 border-t border-[#F4F6F8] flex items-center justify-between text-xs text-[#64748B]">
+        <span className="text-[10px] font-mono">ID: {data.participantCode}</span>
 
         {onFlip && (
           <button
             type="button"
             onClick={onFlip}
-            className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer text-[10px] font-semibold shrink-0"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#172B45] hover:text-[#00A878] transition-colors cursor-pointer"
           >
-            <span>Flip for Front</span>
-            <RotateCw className="h-3 w-3" />
+            <span>Show Front</span>
+            <RotateCw className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
     </div>
   );
 }
-

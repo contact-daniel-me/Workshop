@@ -121,6 +121,9 @@ function DashboardPage() {
       photoUrl,
       photoPath: me.profile.photo_path,
       verificationStatus: me.profile.verification_status,
+      issueDate: me.profile.created_at
+        ? new Date(me.profile.created_at).toISOString().slice(0, 10)
+        : undefined,
       workshopName: settings?.name || "Workshop Attendance",
       startDate,
       endDate,

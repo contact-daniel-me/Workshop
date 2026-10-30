@@ -75,10 +75,10 @@ export function DigitalParticipantIdCard({
 
       if (res.ok && res.code === "ACTIVE_QR" && res.token) {
         const url = await QRCode.toDataURL(res.token, {
-          width: 320,
-          margin: 2,
+          width: 360,
+          margin: 1,
           color: {
-            dark: "#042f2e",
+            dark: "#172B45",
             light: "#ffffff",
           },
         });
@@ -177,10 +177,10 @@ export function DigitalParticipantIdCard({
 
       const link = document.createElement("a");
       const side = isFlipped ? "Back" : "Front";
-      link.download = `${data.participantCode}_SmartAttend_Digital_ID_${side}.png`;
+      link.download = `${data.participantCode}_Participant_ID_${side}.png`;
       link.href = dataUrl;
       link.click();
-      toast.success(`Digital ID (${side}) downloaded successfully!`);
+      toast.success(`Identity Card (${side}) downloaded successfully!`);
     } catch (err: unknown) {
       console.error("Failed to download digital ID card:", err);
       toast.error("Failed to download ID card image. Please try again.");
@@ -194,8 +194,8 @@ export function DigitalParticipantIdCard({
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `${data.fullName} — Digital Participant ID`,
-          text: `Official Event ID Pass for ${data.workshopName} (${data.participantCode})`,
+          title: `${data.fullName} — Participant Identity`,
+          text: `Participant Identity Credential: ${data.fullName} (${data.participantCode})`,
         });
         toast.success("Shared successfully!");
       } catch {
@@ -203,7 +203,7 @@ export function DigitalParticipantIdCard({
       }
     } else {
       void navigator.clipboard.writeText(
-        `SmartAttend Digital ID: ${data.fullName} | ID: ${data.participantCode} | Event: ${data.workshopName}`,
+        `Participant Identity: ${data.fullName} | ID: ${data.participantCode}`,
       );
       toast.success("Participant details copied to clipboard!");
     }
@@ -279,7 +279,7 @@ export function DigitalParticipantIdCard({
       {viewMode === "card" && (
         <div className="flex flex-col items-center justify-center py-4">
           {/* Card Container with smooth 3D Perspective */}
-          <div className="[perspective:1200px] w-full max-w-[360px] sm:max-w-[380px]">
+          <div className="[perspective:1200px] w-full max-w-[340px] sm:max-w-[360px]">
             <div
               ref={cardRef}
               onClick={() => setIsFlipped((prev) => !prev)}
@@ -374,7 +374,7 @@ export function DigitalParticipantIdCard({
                   </Badge>
                 </div>
                 <CardDescription>
-                  Verified credential recorded in the SmartAttend workshop directory.
+                  Verified personal identity credential.
                 </CardDescription>
               </CardHeader>
 

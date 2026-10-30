@@ -63,6 +63,9 @@ export function AdminDigitalIdDialog({
       photoUrl: photoUrl || null,
       photoPath: participant.photo_path || null,
       verificationStatus: participant.verification_status,
+      issueDate: (participant as any).created_at
+        ? new Date((participant as any).created_at).toISOString().slice(0, 10)
+        : undefined,
       workshopName: settings?.name || "Workshop Attendance",
       startDate,
       endDate,
