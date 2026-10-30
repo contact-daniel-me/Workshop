@@ -586,6 +586,15 @@ function AdminPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <Button
             size="sm"
+            onClick={() => setRegisterDialogOpen(true)}
+            className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs sm:text-sm shadow-xs"
+          >
+            <UserPlus className="h-4 w-4 shrink-0" />
+            <span>Register Participant</span>
+          </Button>
+
+          <Button
+            size="sm"
             variant={activeTab === "scanner" && verificationMode === "qr" ? "default" : "outline"}
             onClick={() => {
               setActiveTab("scanner");
