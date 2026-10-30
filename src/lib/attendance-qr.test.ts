@@ -7,7 +7,7 @@ import {
 import {
   type QrVerificationResultCode,
 } from "./attendance-qr.server";
-import { todayLocal, addDays, workshopDays, summarize } from "./attendance";
+import { todayLocal, addDays, workshopDays, summarize, SESSION_START_HOUR } from "./attendance";
 
 describe("Dynamic Daily QR Attendance Cryptography & Tokens", () => {
   it("generates unique, unpredictable cryptographically random tokens", () => {
@@ -479,6 +479,12 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
     expect(res.status).toBe("pending_review");
     expect(res.resultCode).toBe("UNCERTAIN_MATCH_PENDING_REVIEW");
     expect(res.attendanceRecord).toBeNull();
+  });
+
+  it("ensures SESSION_START_HOUR is imported and defined properly for session unlock checks", () => {
+    expect(SESSION_START_HOUR).toBeDefined();
+    expect(typeof SESSION_START_HOUR).toBe("number");
+    expect(SESSION_START_HOUR).toBe(0);
   });
 });
 

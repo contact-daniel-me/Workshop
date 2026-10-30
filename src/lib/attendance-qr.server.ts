@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { todayLocal, workshopDays, getKolkataTime, getNextSessionUnlockTime } from "./attendance";
+import { todayLocal, workshopDays, getKolkataTime, getNextSessionUnlockTime, SESSION_START_HOUR } from "./attendance";
 import { computeVisualFeatureSimilarity, fetchStorageImage } from "./face-verification.server";
 
 export interface ParticipantQrResponse {
