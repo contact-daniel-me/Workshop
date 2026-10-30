@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { appUniversalSignIn, normalizeAppPassword, phoneToAuthEmail } from "@/lib/auth-helpers";
-import { lookupProfileByPhone, uploadRegistrationPhoto, publicRegisterParticipant, type LookupProfileResult } from "@/lib/lookup.functions";
+import { appUniversalSignIn } from "@/lib/auth-helpers";
+import { lookupProfileByPhone, type LookupProfileResult } from "@/lib/lookup.functions";
 import { INDIAN_PHONE, normalizePhone } from "@/lib/attendance";
 import { signedUrls } from "@/lib/use-me";
 import { Button } from "@/components/ui/button";
@@ -24,31 +24,30 @@ import {
   Camera,
   RefreshCw,
 } from "lucide-react";
-import { PhotoCaptureInput } from "./PhotoCaptureInput";
-import { validateClientImageFile, fileToBase64, optimizeImageFile } from "@/lib/image-validation";
 
-export type AuthMode = "login" | "register" | "lookup" | "forgot";
+export type AuthMode = "login" | "lookup" | "forgot";
 
 interface AuthPortalProps {
-  initialMode?: AuthMode;
+  initialMode?: AuthMode | "register";
   redirectTo?: string;
   className?: string;
 }
 
 export function AuthPortal({ initialMode = "login", redirectTo, className = "" }: AuthPortalProps) {
-  const [mode, setMode] = useState<AuthMode>(initialMode);
+  const effectiveInitial = initialMode === "register" ? "login" : initialMode;
+  const [mode, setMode] = useState<AuthMode>(effectiveInitial);
   const [prefilledIdentifier, setPrefilledIdentifier] = useState<string>("");
 
   useEffect(() => {
     if (initialMode) {
-      setMode(initialMode);
+      setMode(initialMode === "register" ? "login" : initialMode);
     }
   }, [initialMode]);
 
   return (
     <div className={`w-full max-w-md rounded-2xl border bg-card p-6 shadow-xl sm:p-8 ${className}`}>
-      {/* Navigation tabs: Sign In | Register | View Details */}
-      <div className="flex rounded-xl border bg-muted/60 p-1 text-[11px] sm:text-xs font-semibold mb-6">
+      {/* Navigation tabs: Sign In | View Details */}
+      <div className="flex rounded-xl border bg-muted/60 p-1 text-xs font-semibold mb-6">
         <button
           type="button"
           className={`flex-1 py-2 text-center rounded-lg transition-all whitespace-nowrap px-1 ${
@@ -59,17 +58,6 @@ export function AuthPortal({ initialMode = "login", redirectTo, className = "" }
           onClick={() => setMode("login")}
         >
           Sign In
-        </button>
-        <button
-          type="button"
-          className={`flex-1 py-2 text-center rounded-lg transition-all whitespace-nowrap px-1 ${
-            mode === "register"
-              ? "bg-card text-foreground shadow-sm font-bold"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setMode("register")}
-        >
-          Register
         </button>
         <button
           type="button"
@@ -89,15 +77,6 @@ export function AuthPortal({ initialMode = "login", redirectTo, className = "" }
           setMode={setMode}
           redirectTo={redirectTo}
           prefilledIdentifier={prefilledIdentifier}
-        />
-      )}
-
-      {mode === "register" && (
-        <RegisterForm
-          setMode={setMode}
-          onFoundExisting={(phone) => {
-            setPrefilledIdentifier(phone);
-          }}
         />
       )}
 
@@ -714,11 +693,8 @@ function PhoneLookupView({
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-center space-y-2">
           <AlertCircle className="mx-auto h-6 w-6 text-destructive" />
           <p className="text-xs text-muted-foreground">
-            No registration found for this mobile number. You can register a new account below.
+            No registered profile found for this mobile number. Please contact your workshop administrator for enrollment.
           </p>
-          <Button size="sm" variant="outline" onClick={() => setMode("register")}>
-            Register New Account
-          </Button>
         </div>
       )}
     </div>

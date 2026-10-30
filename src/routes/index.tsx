@@ -13,7 +13,7 @@ import {
 export const Route = createFileRoute("/")({
   ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({
-    mode: (["login", "register", "lookup", "forgot"].includes(s["mode"] as string)
+    mode: (["login", "lookup", "forgot"].includes(s["mode"] as string)
       ? s["mode"]
       : undefined) as AuthMode | undefined,
     redirect: typeof s["redirect"] === "string" && s["redirect"].startsWith("/")
@@ -25,12 +25,12 @@ export const Route = createFileRoute("/")({
       { title: "Event Management Portal" },
       {
         name: "description",
-        content: "Event Management Portal: Sign in with mobile number, register participant account, or lookup details.",
+        content: "Event Management Portal: Sign in with email or mobile number, or look up attendance details.",
       },
       { property: "og:title", content: "Event Management Portal" },
       {
         property: "og:description",
-        content: "Event Management Portal: Sign in with mobile number, register participant account, or lookup details.",
+        content: "Event Management Portal: Sign in with email or mobile number, or look up attendance details.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -43,14 +43,14 @@ const instructions = [
   {
     step: "01",
     Icon: Smartphone,
-    t: "Register Your Profile",
-    d: "Submit your full name, email, 10-digit mobile number, and capture a mandatory front-facing selfie photograph.",
+    t: "Admin Enrollment",
+    d: "Your workshop administrator enrolls your participant profile with your email, mobile number, and reference photograph.",
   },
   {
     step: "02",
     Icon: ShieldCheck,
-    t: "Admin Review & Approval",
-    d: "Workshop administrators review your submitted details and photo before unlocking daily attendance check-in.",
+    t: "Verification & Sign In",
+    d: "Sign in using your registered mobile number or email and password provided by the workshop administration.",
   },
   {
     step: "03",
@@ -87,7 +87,7 @@ function Index() {
               </h1>
 
               <p className="max-w-2xl text-base sm:text-lg opacity-85 leading-relaxed">
-                Log in with your email address or mobile number, submit your participant registration, or look up your
+                Log in with your email address or mobile number, or look up your
                 approval status and attendance records directly below.
               </p>
 

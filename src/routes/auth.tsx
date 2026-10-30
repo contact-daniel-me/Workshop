@@ -5,7 +5,7 @@ import { QrCode } from "lucide-react";
 export const Route = createFileRoute("/auth")({
   ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({
-    mode: (["login", "register", "lookup", "forgot"].includes(s["mode"] as string)
+    mode: (["login", "lookup", "forgot"].includes(s["mode"] as string)
       ? s["mode"]
       : undefined) as AuthMode | undefined,
     redirect: typeof s["redirect"] === "string" && s["redirect"].startsWith("/")
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/auth")({
       { title: "Event Management Portal" },
       {
         name: "description",
-        content: "Email and mobile phone login and registration for Event Management Portal.",
+        content: "Email and mobile phone login for Event Management Portal.",
       },
     ],
   }),
