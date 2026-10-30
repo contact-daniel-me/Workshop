@@ -98,8 +98,9 @@ function AdminPage() {
   const { data: settings } = useSettings();
   const { data: adminData, isLoading: dataLoading, refetch } = useAdminData();
 
-  // Active Tab
-  const [activeTab, setActiveTab] = useState("overview");
+  // Active Tab & Verification Console Mode (Default to taking attendance)
+  const [activeTab, setActiveTab] = useState("scanner");
+  const [verificationMode, setVerificationMode] = useState<"qr" | "face">("qr");
 
   // QR Display State
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -582,11 +583,48 @@ function AdminPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={() => void refetch()} className="gap-2 flex-1 sm:flex-initial">
-            <RotateCw className="h-4 w-4" /> Refresh Data
+          <Button
+            size="sm"
+            variant={activeTab === "scanner" && verificationMode === "qr" ? "default" : "outline"}
+            onClick={() => {
+              setActiveTab("scanner");
+              setVerificationMode("qr");
+            }}
+            className={`gap-2 text-xs sm:text-sm font-semibold shadow-xs transition-all ${
+              activeTab === "scanner" && verificationMode === "qr"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "border-primary/40 text-primary hover:bg-primary/5"
+            }`}
+          >
+            <QrCode className="h-4 w-4 shrink-0" />
+            <span>QR Code Verification</span>
           </Button>
-          <Button size="sm" onClick={handleExport30Day} className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white flex-1 sm:flex-initial">
-            <FileSpreadsheet className="h-4 w-4" /> Export All (.xlsx)
+
+          <Button
+            size="sm"
+            variant={activeTab === "scanner" && verificationMode === "face" ? "default" : "outline"}
+            onClick={() => {
+              setActiveTab("scanner");
+              setVerificationMode("face");
+            }}
+            className={`gap-2 text-xs sm:text-sm font-semibold shadow-xs transition-all ${
+              activeTab === "scanner" && verificationMode === "face"
+                ? "bg-purple-700 hover:bg-purple-800 text-white shadow-sm"
+                : "border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40"
+            }`}
+          >
+            <ScanFace className="h-4 w-4 shrink-0" />
+            <span>Face Recognition</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => void refetch()}
+            title="Refresh Data"
+            className="h-9 w-9 text-muted-foreground hover:text-foreground shrink-0"
+          >
+            <RotateCw className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -600,8 +638,8 @@ function AdminPage() {
               <SelectValue placeholder="Select section" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="overview">📊 Overview & Analytics</SelectItem>
               <SelectItem value="scanner">🛡️ Attendance Verification Console</SelectItem>
+              <SelectItem value="overview">📊 Overview & Analytics</SelectItem>
               <SelectItem value="daily">📅 Daily Attendance</SelectItem>
               <SelectItem value="qr">📺 Projector QR</SelectItem>
               <SelectItem value="participants">👥 Participants ({totalRegistered})</SelectItem>
@@ -614,11 +652,11 @@ function AdminPage() {
 
         {/* Tab Pills Bar (Always starts from left, smoothly scrollable on mobile, grid on tablet/desktop) */}
         <TabsList className="flex w-full overflow-x-auto justify-start items-center sm:grid sm:grid-cols-4 lg:grid-cols-7 h-auto p-1.5 bg-muted/60 gap-1 rounded-xl border">
-          <TabsTrigger value="overview" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
-            <BarChart3 className="h-3.5 w-3.5" /> Overview
-          </TabsTrigger>
           <TabsTrigger value="scanner" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-bold text-primary">
             <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Verification Console
+          </TabsTrigger>
+          <TabsTrigger value="overview" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
+            <BarChart3 className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
           <TabsTrigger value="daily" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <Calendar className="h-3.5 w-3.5" /> Daily Attendance
@@ -642,7 +680,18 @@ function AdminPage() {
           )}
         </TabsList>
 
-        {/* TAB 1: OVERVIEW & ANALYTICS */}
+        {/* TAB 1: ATTENDANCE VERIFICATION CONSOLE (QR & Face Recognition) */}
+        <TabsContent value="scanner" className="space-y-6">
+          <AdminQrScannerTab
+            workshopName={settings?.name}
+            onAttendanceConfirmed={() => void refetch()}
+            approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
+            activeMode={verificationMode}
+            onModeChange={setVerificationMode}
+          />
+        </TabsContent>
+
+        {/* TAB 2: OVERVIEW & ANALYTICS */}
         <TabsContent value="overview" className="space-y-6">
           {/* 8 KPI Cards */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -786,14 +835,6 @@ function AdminPage() {
           </div>
         </TabsContent>
 
-        {/* TAB: ATTENDANCE VERIFICATION CONSOLE (QR & Face Recognition) */}
-        <TabsContent value="scanner" className="space-y-6">
-          <AdminQrScannerTab
-            workshopName={settings?.name}
-            onAttendanceConfirmed={() => void refetch()}
-            approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
-          />
-        </TabsContent>
 
         {/* TAB: DAILY ATTENDANCE MANAGEMENT (Requirement 7) */}
         <TabsContent value="daily" className="space-y-6">

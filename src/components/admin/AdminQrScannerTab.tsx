@@ -50,15 +50,20 @@ interface Props {
     phone: string;
     photo_path: string | null;
   }>;
+  activeMode?: "qr" | "face";
+  onModeChange?: (mode: "qr" | "face") => void;
 }
 
 export function AdminQrScannerTab({
-  workshopName = "SmartAttend Workshop",
+  workshopName = "Event Management Portal",
   onAttendanceConfirmed,
   approvedParticipants = [],
+  activeMode: controlledMode,
+  onModeChange,
 }: Props) {
   // Verification Mode: QR Scanner (Option A) vs Face Recognition (Option B)
-  const [activeMode, setActiveMode] = useState<"qr" | "face">("qr");
+  const [internalMode, setInternalMode] = useState<"qr" | "face">("qr");
+  const activeMode = controlledMode ?? internalMode;
 
   // =========================================================================
   // OPTION A: QR SCANNER STATE
@@ -126,11 +131,24 @@ export function AdminQrScannerTab({
     };
   }, [stopQrCamera, stopFaceCamera]);
 
+  // Sync external mode changes
+  useEffect(() => {
+    if (controlledMode && controlledMode !== internalMode) {
+      stopQrCamera();
+      stopFaceCamera();
+      setInternalMode(controlledMode);
+      setQrVerificationResult(null);
+      setQrConfirmedResult(null);
+      setFaceResult(null);
+    }
+  }, [controlledMode, internalMode, stopQrCamera, stopFaceCamera]);
+
   // Handle mode change
   const handleModeChange = (mode: "qr" | "face") => {
     stopQrCamera();
     stopFaceCamera();
-    setActiveMode(mode);
+    setInternalMode(mode);
+    onModeChange?.(mode);
     setQrVerificationResult(null);
     setQrConfirmedResult(null);
     setFaceResult(null);
