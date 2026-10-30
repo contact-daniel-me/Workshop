@@ -560,22 +560,19 @@ function AdminPage() {
       {/* Portal Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
-              Attendance Administration
-            </h1>
-            <Badge className="bg-primary/20 text-primary font-mono text-xs">STAFF PORTAL</Badge>
-          </div>
+          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+            Attendance Administration
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {settings?.name || "Workshop Attendance"} • Management & Verification Console
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()} className="gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => void refetch()} className="gap-2 flex-1 sm:flex-initial">
             <RotateCw className="h-4 w-4" /> Refresh Data
           </Button>
-          <Button size="sm" onClick={handleExport30Day} className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white">
+          <Button size="sm" onClick={handleExport30Day} className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white flex-1 sm:flex-initial">
             <FileSpreadsheet className="h-4 w-4" /> Export All (.xlsx)
           </Button>
         </div>

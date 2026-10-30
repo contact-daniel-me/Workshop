@@ -449,47 +449,51 @@ export function AdminQrScannerTab({
       {/* UNIFIED VERIFICATION CONSOLE HEADER & METHOD SELECTOR */}
       {/* ========================================================================= */}
       <Card className="border-2 border-primary/25 shadow-sm overflow-hidden">
-        <CardHeader className="pb-3 bg-muted/20">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <CardHeader className="pb-3 bg-muted/20 p-4 sm:p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-6 w-6 text-primary" />
-                <CardTitle className="font-display text-xl font-bold">
+              <div className="flex flex-wrap items-center gap-2">
+                <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
+                <CardTitle className="font-display text-lg sm:text-xl font-bold">
                   Attendance Verification Console
                 </CardTitle>
-                <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
+                <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary shrink-0">
                   ADMIN CONSOLE
                 </Badge>
               </div>
-              <CardDescription className="mt-1">
+              <CardDescription className="mt-1 text-xs sm:text-sm">
                 Independent verification methods: mark attendance by <strong>QR Code</strong> OR{" "}
                 <strong>Face Recognition</strong>. Either successful method confirms presence.
               </CardDescription>
             </div>
 
             {/* Mode Switcher Tabs */}
-            <div className="flex items-center p-1 bg-muted rounded-xl border shrink-0">
+            <div className="grid grid-cols-2 w-full lg:w-auto p-1 bg-muted/90 rounded-xl border gap-1">
               <Button
                 size="sm"
                 variant={activeMode === "qr" ? "default" : "ghost"}
                 onClick={() => handleModeChange("qr")}
-                className={`gap-2 text-xs font-bold rounded-lg transition-all ${
+                className={`w-full justify-center gap-1.5 text-xs font-bold rounded-lg transition-all px-3 py-2 ${
                   activeMode === "qr" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
                 }`}
               >
-                <QrCode className="h-4 w-4" /> Option A: QR Code
+                <QrCode className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Option A: </span>
+                <span>QR Code</span>
               </Button>
               <Button
                 size="sm"
                 variant={activeMode === "face" ? "default" : "ghost"}
                 onClick={() => handleModeChange("face")}
-                className={`gap-2 text-xs font-bold rounded-lg transition-all ${
+                className={`w-full justify-center gap-1.5 text-xs font-bold rounded-lg transition-all px-3 py-2 ${
                   activeMode === "face"
                     ? "bg-purple-700 hover:bg-purple-800 text-white shadow-xs"
                     : "text-muted-foreground"
                 }`}
               >
-                <ScanFace className="h-4 w-4" /> Option B: Face Recognition
+                <ScanFace className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Option B: </span>
+                <span>Face Recognition</span>
               </Button>
             </div>
           </div>
@@ -502,25 +506,25 @@ export function AdminQrScannerTab({
       {activeMode === "qr" && (
         <div className="space-y-6">
           <Card className="shadow-sm border">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-3 p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle className="font-display text-lg font-bold flex items-center gap-2">
-                    <QrCode className="h-5 w-5 text-primary" /> QR Code Verification
+                  <CardTitle className="font-display text-base sm:text-lg font-bold flex items-center gap-2">
+                    <QrCode className="h-5 w-5 text-primary shrink-0" /> QR Code Verification
                   </CardTitle>
-                  <CardDescription>
+                  <CardDescription className="text-xs sm:text-sm mt-0.5">
                     Scan participant's daily rotating QR code or enter their 6-character backup token.
                   </CardDescription>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   {qrScannerActive ? (
-                    <>
+                    <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={toggleQrCameraFacing}
-                        className="gap-1.5 text-xs font-semibold"
+                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
                       >
                         <RotateCcw className="h-3.5 w-3.5" /> Flip Camera
                       </Button>
@@ -528,16 +532,16 @@ export function AdminQrScannerTab({
                         size="sm"
                         variant="destructive"
                         onClick={stopQrCamera}
-                        className="gap-1.5 text-xs font-semibold"
+                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
                       >
                         Stop Scanner
                       </Button>
-                    </>
+                    </div>
                   ) : (
                     <Button
                       size="sm"
                       onClick={() => void startQrCamera()}
-                      className="gap-2 font-bold bg-primary text-primary-foreground shadow-xs"
+                      className="gap-2 font-bold bg-primary text-primary-foreground shadow-xs w-full sm:w-auto justify-center"
                     >
                       <Camera className="h-4 w-4" /> Start QR Scanner
                     </Button>
@@ -546,21 +550,21 @@ export function AdminQrScannerTab({
               </div>
             </CardHeader>
 
-            <CardContent className="space-y-4 pt-1">
+            <CardContent className="space-y-4 pt-1 p-4 sm:p-6">
               {/* Manual Token / Short Code Fallback */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-xl bg-muted/40 border">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-3 sm:p-3.5 rounded-xl bg-muted/40 border">
                 <span className="text-xs font-semibold text-muted-foreground sm:w-44 shrink-0">
                   Manual Token / Backup Code:
                 </span>
                 <div className="relative flex-1">
                   <Input
-                    placeholder="Paste QR token string or 6-char backup code…"
+                    placeholder="Enter QR token or 6-char backup code…"
                     value={manualCode}
                     onChange={(e) => setManualCode(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void processToken(manualCode);
                     }}
-                    className="font-mono text-xs pr-20"
+                    className="font-mono text-xs w-full"
                   />
                 </div>
                 <Button
@@ -568,7 +572,7 @@ export function AdminQrScannerTab({
                   size="sm"
                   onClick={() => void processToken(manualCode)}
                   disabled={qrVerifying || !manualCode.trim()}
-                  className="gap-1.5 font-bold text-xs"
+                  className="gap-1.5 font-bold text-xs w-full sm:w-auto justify-center"
                 >
                   {qrVerifying ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
                   Verify Code
@@ -596,8 +600,8 @@ export function AdminQrScannerTab({
                 />
 
                 {/* Target Reticle Overlay */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
-                  <div className="relative w-64 h-64 md:w-80 md:h-80 rounded-2xl border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 sm:p-6">
+                  <div className="relative w-56 h-56 sm:w-64 sm:h-64 md:w-80 md:h-80 rounded-2xl border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] max-w-[85vw] max-h-[85vw]">
                     <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-emerald-400 -mt-1 -ml-1 rounded-tl" />
                     <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-emerald-400 -mt-1 -mr-1 rounded-tr" />
                     <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-emerald-400 -mb-1 -ml-1 rounded-bl" />
@@ -658,17 +662,17 @@ export function AdminQrScannerTab({
                 </div>
 
                 {/* Confirmed Dossier Pill */}
-                <div className="flex items-center gap-4 bg-card p-4 rounded-2xl border shadow-xs max-w-md w-full justify-center">
+                <div className="flex flex-col sm:flex-row items-center gap-4 bg-card p-4 rounded-2xl border shadow-xs max-w-md w-full justify-center text-center sm:text-left">
                   <ClickableAvatar
                     src={qrConfirmedResult.participant?.photoUrl ?? undefined}
                     alt={qrConfirmedResult.participant?.fullName}
                     fullName={qrConfirmedResult.participant?.fullName}
                     participantCode={qrConfirmedResult.participant?.participantCode}
                     fallback={qrConfirmedResult.participant?.fullName?.slice(0, 2).toUpperCase() ?? "SA"}
-                    className="h-20 w-20 border-2 border-emerald-500/40 shadow-xs"
+                    className="h-20 w-20 border-2 border-emerald-500/40 shadow-xs shrink-0"
                     fallbackClassName="text-base"
                   />
-                  <div className="text-left space-y-1">
+                  <div className="space-y-1">
                     <p className="font-bold text-base text-foreground">{qrConfirmedResult.participant?.fullName}</p>
                     <p className="text-xs font-mono text-muted-foreground">{qrConfirmedResult.participant?.participantCode}</p>
                     <Badge variant="outline" className="text-[10px] uppercase font-mono bg-emerald-500/10 text-emerald-700 border-emerald-200">
@@ -680,8 +684,8 @@ export function AdminQrScannerTab({
                   </div>
                 </div>
 
-                <div className="pt-2">
-                  <Button onClick={handleResetQr} className="gap-2 font-bold bg-primary text-primary-foreground shadow-md px-6">
+                <div className="pt-2 w-full sm:w-auto">
+                  <Button onClick={handleResetQr} className="gap-2 font-bold bg-primary text-primary-foreground shadow-md px-6 w-full sm:w-auto justify-center">
                     <Camera className="h-4 w-4" /> Next Participant <ArrowRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -702,7 +706,7 @@ export function AdminQrScannerTab({
             >
               {/* Status Header Banner */}
               <div
-                className={`px-6 py-3.5 border-b flex items-center justify-between flex-wrap gap-2 ${
+                className={`px-4 sm:px-6 py-3 border-b flex items-center justify-between flex-wrap gap-2 ${
                   qrVerificationResult.valid
                     ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-200"
                     : qrVerificationResult.resultCode === "ATTENDANCE_ALREADY_MARKED"
@@ -712,17 +716,17 @@ export function AdminQrScannerTab({
               >
                 <div className="flex items-center gap-2 font-bold text-sm">
                   {qrVerificationResult.valid ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
                   ) : qrVerificationResult.resultCode === "ATTENDANCE_ALREADY_MARKED" ? (
-                    <Clock className="h-5 w-5 text-slate-600" />
+                    <Clock className="h-5 w-5 text-slate-600 shrink-0" />
                   ) : (
-                    <XCircle className="h-5 w-5 text-destructive" />
+                    <XCircle className="h-5 w-5 text-destructive shrink-0" />
                   )}
-                  <span>{qrVerificationResult.resultMessage}</span>
+                  <span className="leading-snug">{qrVerificationResult.resultMessage}</span>
                 </div>
 
                 <Badge
-                  className={`uppercase font-mono text-[10px] ${
+                  className={`uppercase font-mono text-[10px] shrink-0 ${
                     qrVerificationResult.valid
                       ? "bg-emerald-600 text-white"
                       : qrVerificationResult.resultCode === "ATTENDANCE_ALREADY_MARKED"
@@ -734,7 +738,7 @@ export function AdminQrScannerTab({
                 </Badge>
               </div>
 
-              <CardContent className="p-6 space-y-6">
+              <CardContent className="p-4 sm:p-6 space-y-6">
                 {qrVerificationResult.participant ? (
                   <div className="grid gap-6 md:grid-cols-3">
                     <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-muted/20 space-y-3 text-center">
@@ -838,12 +842,12 @@ export function AdminQrScannerTab({
                   </div>
                 )}
 
-                <div className="flex items-center justify-between pt-4 border-t flex-wrap gap-3">
+                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between pt-4 border-t gap-3">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleResetQr}
-                    className="text-xs gap-1.5"
+                    className="text-xs gap-1.5 w-full sm:w-auto justify-center"
                   >
                     <RotateCcw className="h-3.5 w-3.5" /> Next Participant
                   </Button>
@@ -853,7 +857,7 @@ export function AdminQrScannerTab({
                       size="default"
                       onClick={handleConfirmAttendance}
                       disabled={qrConfirming}
-                      className="gap-2 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md text-sm px-6"
+                      className="gap-2 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md text-sm px-6 w-full sm:w-auto justify-center"
                     >
                       {qrConfirming ? (
                         <>
@@ -879,25 +883,25 @@ export function AdminQrScannerTab({
       {activeMode === "face" && (
         <div className="space-y-6">
           <Card className="shadow-sm border">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-3 p-4 sm:p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle className="font-display text-lg font-bold flex items-center gap-2">
-                    <ScanFace className="h-5 w-5 text-purple-600" /> Face Recognition Verification
+                  <CardTitle className="font-display text-base sm:text-lg font-bold flex items-center gap-2">
+                    <ScanFace className="h-5 w-5 text-purple-600 shrink-0" /> Face Recognition Verification
                   </CardTitle>
-                  <CardDescription>
+                  <CardDescription className="text-xs sm:text-sm mt-0.5">
                     Capture attendee's face using the live camera to match against enrolled reference photos.
                   </CardDescription>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   {faceCameraActive ? (
-                    <>
+                    <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={toggleFaceCameraFacing}
-                        className="gap-1.5 text-xs font-semibold"
+                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
                       >
                         <RotateCcw className="h-3.5 w-3.5" /> Flip Camera
                       </Button>
@@ -905,16 +909,16 @@ export function AdminQrScannerTab({
                         size="sm"
                         variant="destructive"
                         onClick={stopFaceCamera}
-                        className="gap-1.5 text-xs font-semibold"
+                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
                       >
                         Stop Camera
                       </Button>
-                    </>
+                    </div>
                   ) : (
                     <Button
                       size="sm"
                       onClick={() => void startFaceCamera()}
-                      className="gap-2 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-md hover:shadow-lg rounded-xl transition-all duration-200 active:scale-95 px-4 py-2"
+                      className="gap-2 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-md hover:shadow-lg rounded-xl transition-all duration-200 active:scale-95 px-4 py-2 w-full sm:w-auto justify-center"
                     >
                       <ScanFace className="h-4 w-4 text-purple-100" /> Start Face Camera
                     </Button>
@@ -923,9 +927,9 @@ export function AdminQrScannerTab({
               </div>
             </CardHeader>
 
-            <CardContent className="space-y-4 pt-1">
+            <CardContent className="space-y-4 pt-1 p-4 sm:p-6">
               {/* Optional 1-to-1 Targeted Participant Selector */}
-              <div className="p-3.5 rounded-2xl bg-muted/30 border border-muted-foreground/15 space-y-3">
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-muted/30 border border-muted-foreground/15 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="h-7 w-7 rounded-lg bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
@@ -937,18 +941,18 @@ export function AdminQrScannerTab({
                     </div>
                   </div>
 
-                  <div className="flex items-center p-1 bg-muted/80 rounded-xl border border-muted-foreground/10 shrink-0 gap-1.5 flex-wrap sm:flex-nowrap">
+                  <div className="grid grid-cols-2 w-full sm:w-auto p-1 bg-muted/80 rounded-xl border border-muted-foreground/10 gap-1">
                     <button
                       type="button"
                       onClick={() => setSelectedParticipantId("")}
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                      className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer ${
                         !selectedParticipantId
                           ? "bg-purple-700 text-white shadow-xs font-bold"
                           : "text-muted-foreground hover:text-foreground hover:bg-card/50"
                       }`}
                     >
                       <Users className="h-3.5 w-3.5 shrink-0" />
-                      <span>1-to-N Auto Match</span>
+                      <span><span className="hidden sm:inline">1-to-N </span>Auto Match</span>
                     </button>
                     <button
                       type="button"
@@ -957,14 +961,14 @@ export function AdminQrScannerTab({
                           setSelectedParticipantId(approvedParticipants[0]?.id || "");
                         }
                       }}
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                      className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer ${
                         selectedParticipantId
                           ? "bg-purple-700 text-white shadow-xs font-bold"
                           : "text-muted-foreground hover:text-foreground hover:bg-card/50"
                       }`}
                     >
                       <Target className="h-3.5 w-3.5 shrink-0" />
-                      <span>1-to-1 Specific Attendee</span>
+                      <span><span className="hidden sm:inline">1-to-1 </span>Specific Attendee</span>
                     </button>
                   </div>
                 </div>
@@ -980,7 +984,7 @@ export function AdminQrScannerTab({
                     <select
                       value={selectedParticipantId}
                       onChange={(e) => setSelectedParticipantId(e.target.value)}
-                      className="text-xs font-medium rounded-md border bg-background px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="text-xs font-medium rounded-md border bg-background px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary w-full"
                     >
                       {filteredApproved.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -1013,8 +1017,8 @@ export function AdminQrScannerTab({
                 />
 
                 {/* Face Oval Reticle Overlay */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
-                  <div className="relative w-64 h-80 md:w-72 md:h-96 rounded-[50%] border-2 border-purple-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center">
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 sm:p-6">
+                  <div className="relative w-56 h-72 sm:w-64 sm:h-80 md:w-72 md:h-96 rounded-[50%] border-2 border-purple-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center max-w-[85vw]">
                     {/* Guidance marks */}
                     <div className="w-12 h-0.5 bg-purple-400/60 absolute left-2" />
                     <div className="w-12 h-0.5 bg-purple-400/60 absolute right-2" />
@@ -1091,7 +1095,7 @@ export function AdminQrScannerTab({
             >
               {/* Status Header Banner */}
               <div
-                className={`px-6 py-3.5 border-b flex items-center justify-between flex-wrap gap-2 ${
+                className={`px-4 sm:px-6 py-3 border-b flex items-center justify-between flex-wrap gap-2 ${
                   faceResult.ok && faceResult.resultCode === "VERIFIED_PRESENT"
                     ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-200"
                     : faceResult.resultCode === "ALREADY_MARKED"
@@ -1103,20 +1107,20 @@ export function AdminQrScannerTab({
               >
                 <div className="flex items-center gap-2 font-bold text-sm">
                   {faceResult.ok && faceResult.resultCode === "VERIFIED_PRESENT" ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
                   ) : faceResult.resultCode === "ALREADY_MARKED" ? (
-                    <Clock className="h-5 w-5 text-slate-600" />
+                    <Clock className="h-5 w-5 text-slate-600 shrink-0" />
                   ) : faceResult.resultCode === "UNCERTAIN_MATCH_PENDING_REVIEW" ? (
-                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
                   ) : (
-                    <XCircle className="h-5 w-5 text-destructive" />
+                    <XCircle className="h-5 w-5 text-destructive shrink-0" />
                   )}
-                  <span>{faceResult.message}</span>
+                  <span className="leading-snug">{faceResult.message}</span>
                 </div>
 
                 {faceResult.confidence !== undefined && (
                   <Badge
-                    className={`font-mono text-xs ${
+                    className={`font-mono text-xs shrink-0 ${
                       faceResult.ok && faceResult.resultCode === "VERIFIED_PRESENT"
                         ? "bg-emerald-600 text-white"
                         : faceResult.resultCode === "ALREADY_MARKED"
@@ -1129,7 +1133,7 @@ export function AdminQrScannerTab({
                 )}
               </div>
 
-              <CardContent className="p-6 space-y-6">
+              <CardContent className="p-4 sm:p-6 space-y-6">
                 {/* Matched Participant Dossier */}
                 {faceResult.participant ? (
                   <div className="grid gap-6 md:grid-cols-3">
@@ -1261,13 +1265,13 @@ export function AdminQrScannerTab({
                 )}
 
                 {/* Bottom Action Bar */}
-                <div className="flex items-center justify-between pt-4 border-t flex-wrap gap-3">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between pt-4 border-t gap-3">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={handleResetFace}
-                      className="text-xs gap-1.5"
+                      className="text-xs gap-1.5 w-full sm:w-auto justify-center"
                     >
                       <RotateCcw className="h-3.5 w-3.5" /> Next Participant
                     </Button>
@@ -1280,7 +1284,7 @@ export function AdminQrScannerTab({
                           handleModeChange("qr");
                           void startQrCamera();
                         }}
-                        className="text-xs gap-1.5 font-bold"
+                        className="text-xs gap-1.5 font-bold w-full sm:w-auto justify-center"
                       >
                         <QrCode className="h-3.5 w-3.5" /> Switch to QR Verification
                       </Button>
@@ -1291,7 +1295,7 @@ export function AdminQrScannerTab({
                     <Button
                       size="sm"
                       onClick={handleResetFace}
-                      className="gap-2 font-bold bg-primary text-primary-foreground shadow-md text-xs px-5"
+                      className="gap-2 font-bold bg-primary text-primary-foreground shadow-md text-xs px-5 w-full sm:w-auto justify-center"
                     >
                       <Camera className="h-4 w-4" /> Next Participant <ArrowRight className="h-4 w-4" />
                     </Button>
