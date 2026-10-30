@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import jsQR from "jsqr";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Camera, CheckCircle2, AlertTriangle, RefreshCw, KeyRound, UserCheck, Shield } from "lucide-react";
+import { Camera, CheckCircle2, AlertTriangle, RefreshCw, KeyRound, UserCheck, Shield, RotateCcw } from "lucide-react";
 import { checkIn } from "@/lib/checkin.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -24,6 +25,9 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
   const [busy, setBusy] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">(
+    requireSelfie ? "user" : "environment"
+  );
 
   // Selfie capture state (when requireSelfie is true)
   const [selfieBlob, setSelfieBlob] = useState<Blob | null>(null);
@@ -31,12 +35,13 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const scanIntervalRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const stopCamera = useCallback(() => {
-    if (scanIntervalRef.current) {
-      window.clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -46,8 +51,21 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
   }, []);
 
   const handleSuccessfulCode = useCallback(
-    async (code: string) => {
+    async (rawCode: string) => {
       if (busy) return;
+      let clean = rawCode.trim();
+      if (!clean) return;
+
+      // Extract token/code if scanned from a URL or query string
+      if (clean.startsWith("http://") || clean.startsWith("https://")) {
+        try {
+          const parsedUrl = new URL(clean);
+          clean = parsedUrl.searchParams.get("token") || parsedUrl.searchParams.get("code") || clean;
+        } catch {
+          // keep clean
+        }
+      }
+
       setBusy(true);
 
       try {
@@ -68,7 +86,7 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
           selfiePath = path;
         }
 
-        const res = await checkIn({ data: { code, selfiePath } });
+        const res = await checkIn({ data: { code: clean, selfiePath } });
         if (res.ok) {
           toast.success(res.message);
           await qc.invalidateQueries({ queryKey: ["my_attendance"] });
@@ -86,14 +104,50 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
     [busy, requireSelfie, selfieBlob, userId, qc, onOpenChange],
   );
 
-  const startCamera = useCallback(async () => {
+  // Scan frame loop using jsQR
+  const scanFrame = useCallback(() => {
+    if (!videoRef.current || videoRef.current.readyState < 2) {
+      animationFrameRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement("canvas");
+    }
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    if (ctx && video.videoWidth > 0 && video.videoHeight > 0) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const decoded = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert",
+      });
+
+      if (decoded && decoded.data) {
+        stopCamera();
+        void handleSuccessfulCode(decoded.data);
+        return;
+      }
+    }
+
+    animationFrameRef.current = requestAnimationFrame(scanFrame);
+  }, [stopCamera, handleSuccessfulCode]);
+
+  const startCamera = useCallback(async (mode = facingMode) => {
+    stopCamera();
     setCameraError(null);
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Camera access is not supported by your browser. Please use code entry.");
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: requireSelfie ? "user" : { ideal: "environment" } },
+        video: { facingMode: mode === "environment" ? { ideal: "environment" } : "user" },
         audio: false,
       });
       streamRef.current = stream;
@@ -103,29 +157,22 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
       }
       setCameraActive(true);
 
-      // Check for BarcodeDetector API
-      const BarcodeDetectorGlobal = (window as unknown as { BarcodeDetector?: new (options?: { formats: string[] }) => { detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector;
-
-      if (!requireSelfie && BarcodeDetectorGlobal) {
-        const detector = new BarcodeDetectorGlobal({ formats: ["qr_code"] });
-        scanIntervalRef.current = window.setInterval(async () => {
-          if (!videoRef.current || videoRef.current.readyState < 2) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes && codes.length > 0 && codes[0]?.rawValue) {
-              stopCamera();
-              await handleSuccessfulCode(codes[0].rawValue);
-            }
-          } catch {
-            // Frame detection skipped
-          }
-        }, 500);
+      // Start jsQR frame scanning if not waiting for selfie
+      if (!requireSelfie || selfieBlob) {
+        animationFrameRef.current = requestAnimationFrame(scanFrame);
       }
     } catch (err: unknown) {
       setCameraError(err instanceof Error ? err.message : "Could not start camera stream.");
       setCameraActive(false);
     }
-  }, [requireSelfie, stopCamera, handleSuccessfulCode]);
+  }, [facingMode, requireSelfie, selfieBlob, stopCamera, scanFrame]);
+
+  // Flip camera between front and back
+  const toggleFacingMode = () => {
+    const nextMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(nextMode);
+    void startCamera(nextMode);
+  };
 
   useEffect(() => {
     if (open && tab === "camera") {
@@ -149,7 +196,10 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
         if (!blob) return;
         setSelfieBlob(blob);
         setSelfiePreview(URL.createObjectURL(blob));
-        toast.success("Selfie captured! Now scan QR or enter 6-character short code.");
+        toast.success("Selfie captured! Now scan the workshop QR code or enter code.");
+        // Switch to back camera for scanning projector screen
+        setFacingMode("environment");
+        void startCamera("environment");
       },
       "image/jpeg",
       0.85,
@@ -160,7 +210,7 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
     e.preventDefault();
     const code = shortCode.trim();
     if (!code) {
-      toast.error("Please enter the short code.");
+      toast.error("Please enter the 6-character code.");
       return;
     }
     await handleSuccessfulCode(code);
@@ -180,15 +230,15 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
             <Camera className="h-5 w-5 text-primary" /> Daily Attendance Check-In
           </DialogTitle>
           <DialogDescription>
-            Scan today's workshop QR code or enter the 6-character code shown on the presenter's screen.
+            Scan the live workshop QR code on the projector screen or enter the 6-character daily code.
           </DialogDescription>
         </DialogHeader>
 
-        {requireSelfie && (
+        {requireSelfie && !selfieBlob && (
           <Alert className="border-warning/50 bg-warning/10 text-warning-foreground">
             <Shield className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              <strong>Identity Verification Enabled:</strong> You must capture a live photo before submitting attendance.
+              <strong>Identity Verification Enabled:</strong> Please take a quick selfie first before scanning today's QR code.
             </AlertDescription>
           </Alert>
         )}
@@ -201,7 +251,7 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
               <p className="font-semibold text-success flex items-center gap-1">
                 <CheckCircle2 className="h-3.5 w-3.5" /> Verification Photo Ready
               </p>
-              <p className="text-muted-foreground text-[11px]">Ready to submit with your attendance.</p>
+              <p className="text-muted-foreground text-[11px]">Now scan the presenter's QR code below.</p>
             </div>
             <Button
               variant="outline"
@@ -210,6 +260,8 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
               onClick={() => {
                 setSelfieBlob(null);
                 setSelfiePreview(null);
+                setFacingMode("user");
+                void startCamera("user");
               }}
             >
               Retake
@@ -231,6 +283,18 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
             <div className="relative aspect-video w-full overflow-hidden rounded-xl border bg-slate-950 flex items-center justify-center">
               <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
 
+              {/* Camera Flip Button */}
+              {cameraActive && (
+                <button
+                  type="button"
+                  onClick={toggleFacingMode}
+                  className="absolute top-2 right-2 h-8 w-8 rounded-full bg-slate-900/80 text-white flex items-center justify-center hover:bg-slate-800 transition-colors shadow-md z-10"
+                  title="Flip camera"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+              )}
+
               {!cameraActive && !cameraError && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-2">
                   <RefreshCw className="h-6 w-6 animate-spin text-primary" />
@@ -248,17 +312,17 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
                 </div>
               )}
 
-              {cameraActive && !requireSelfie && (
+              {cameraActive && (!requireSelfie || selfieBlob) && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="h-40 w-40 rounded-lg border-2 border-dashed border-primary/80 animate-pulse" />
+                  <div className="h-44 w-44 rounded-xl border-2 border-dashed border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)] animate-pulse" />
                 </div>
               )}
             </div>
 
-            {requireSelfie && cameraActive && (
+            {requireSelfie && !selfieBlob && cameraActive && (
               <Button
                 type="button"
-                className="w-full gap-2 font-semibold"
+                className="w-full gap-2 font-semibold bg-primary text-primary-foreground"
                 onClick={captureSelfieSnapshot}
                 disabled={busy}
               >
@@ -267,7 +331,9 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
             )}
 
             <p className="text-center text-[11px] text-muted-foreground">
-              Tip: Position the QR code inside the box, or switch to the 6-Digit Code tab if lighting is dim.
+              {requireSelfie && !selfieBlob
+                ? "First, smile and capture your selfie. Then point at the projector screen."
+                : "Point your camera at the QR code on the projector screen, or switch to the 6-Digit Code tab."}
             </p>
           </TabsContent>
 
@@ -280,16 +346,22 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
                   onChange={(e) => setShortCode(e.target.value.toUpperCase())}
                   placeholder="e.g. 7X9K2P"
                   maxLength={10}
-                  className="font-mono text-center text-lg tracking-widest uppercase font-bold"
+                  className="font-mono text-center text-xl tracking-widest uppercase font-bold h-12"
                   autoFocus
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  The organizer displays this code alongside the QR code each morning.
+                  The workshop organizer displays this code directly underneath the live QR code on the screen.
                 </p>
               </div>
 
-              <Button type="submit" disabled={busy || !shortCode.trim()} className="w-full font-semibold">
-                {busy ? "Validating attendance…" : "Submit Attendance"}
+              <Button type="submit" disabled={busy || !shortCode.trim()} className="w-full font-bold h-10">
+                {busy ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Validating Attendance…
+                  </>
+                ) : (
+                  "Submit Attendance"
+                )}
               </Button>
             </form>
           </TabsContent>
@@ -298,4 +370,3 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
     </Dialog>
   );
 }
-

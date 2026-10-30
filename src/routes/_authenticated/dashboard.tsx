@@ -193,6 +193,15 @@ function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {isApproved && isWorkshopDay && (
+            <Button
+              size="sm"
+              onClick={() => setScanModalOpen(true)}
+              className="gap-2 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 text-xs sm:text-sm"
+            >
+              <Camera className="h-4 w-4" /> Scan Workshop QR
+            </Button>
+          )}
           {isApproved && (
             <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="gap-2 text-xs sm:text-sm">
               <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Download Report (.xlsx)
@@ -301,6 +310,38 @@ function DashboardPage() {
             </Card>
           </div>
 
+          {/* Live Workshop Projector QR Scan Banner */}
+          {isApproved && isWorkshopDay && todayRecord?.status !== "present" && (
+            <Card className="border-2 border-primary/40 bg-gradient-to-r from-primary/10 via-primary/5 to-card shadow-sm">
+              <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 text-center sm:text-left">
+                  <div className="h-12 w-12 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shrink-0 shadow-md">
+                    <Camera className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 justify-center sm:justify-start">
+                      <h3 className="font-display text-base sm:text-lg font-bold text-foreground">
+                        Live Session Attendance Check-In
+                      </h3>
+                      <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] font-semibold uppercase">
+                        LIVE
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Scan the live rotating QR code projected on the venue screen, or enter the 6-character code.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setScanModalOpen(true)}
+                  className="w-full sm:w-auto shrink-0 gap-2 font-bold bg-primary text-primary-foreground shadow-sm px-6 h-10 hover:scale-[1.02] transition-transform text-xs sm:text-sm"
+                >
+                  <Camera className="h-4 w-4" /> Scan Workshop QR Code
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Prominent My Attendance QR Section */}
           <ParticipantAttendanceQrCard
             participantId={me?.user?.id}
@@ -310,6 +351,7 @@ function DashboardPage() {
             verificationStatus={me?.profile?.verification_status}
             todayDate={today}
             isWorkshopDay={isWorkshopDay}
+            onOpenScanner={() => setScanModalOpen(true)}
             onAttendanceUpdated={() => {
               void qc.invalidateQueries({ queryKey: ["my_attendance"] });
             }}

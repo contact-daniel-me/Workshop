@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   CalendarDays,
   Sparkles,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,6 +27,7 @@ interface Props {
   todayDate: string;
   isWorkshopDay: boolean;
   onAttendanceUpdated?: () => void;
+  onOpenScanner?: () => void;
 }
 
 export function ParticipantAttendanceQrCard({
@@ -37,6 +39,7 @@ export function ParticipantAttendanceQrCard({
   todayDate,
   isWorkshopDay,
   onAttendanceUpdated,
+  onOpenScanner,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [qrData, setQrData] = useState<ParticipantQrResponse | null>(null);
@@ -152,8 +155,17 @@ export function ParticipantAttendanceQrCard({
             </div>
           </div>
 
-          {/* Status Badge */}
-          <div>
+          {/* Status Badge & Scan Trigger */}
+          <div className="flex items-center gap-2">
+            {!isAlreadyPresent && isWorkshopDay && isApproved && onOpenScanner && (
+              <Button
+                size="sm"
+                onClick={onOpenScanner}
+                className="gap-1.5 font-bold text-xs bg-primary text-primary-foreground shadow-xs h-8"
+              >
+                <Camera className="h-3.5 w-3.5" /> Scan Screen
+              </Button>
+            )}
             {isAlreadyPresent ? (
               <Badge className="bg-emerald-600 text-white gap-1.5 px-3 py-1 font-semibold text-xs">
                 <CheckCircle2 className="h-3.5 w-3.5" /> Present
@@ -247,14 +259,29 @@ export function ParticipantAttendanceQrCard({
                 </div>
               </div>
 
-              {/* Instructions banner */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+              {/* Instructions banner with 2 check-in methods */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
                 <p className="text-xs font-bold text-primary flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4" /> How to Mark Attendance:
+                  <ShieldCheck className="h-4 w-4" /> Two Ways to Check In Today:
                 </p>
-                <p className="text-xs text-foreground/90 leading-relaxed">
-                  Present this QR code to the attendance administrator. The administrator will scan it using the Admin QR Scanner to verify your identity and confirm your presence.
-                </p>
+                <div className="space-y-2 text-xs text-foreground/90 leading-relaxed">
+                  <div>
+                    <strong className="text-foreground">Method 1 (Self Scan):</strong> If the workshop organizer is displaying the daily rotating QR code on the venue screen, tap below to scan it with your camera or enter the 6-character code.
+                    {onOpenScanner && (
+                      <Button
+                        type="button"
+                        onClick={onOpenScanner}
+                        className="w-full gap-2 font-bold bg-primary text-primary-foreground mt-2 shadow-xs"
+                        size="sm"
+                      >
+                        <Camera className="h-4 w-4" /> Scan Presenter Screen / Enter Code
+                      </Button>
+                    )}
+                  </div>
+                  <div className="pt-1 border-t border-primary/10">
+                    <strong className="text-foreground">Method 2 (Organizer Scan):</strong> Alternatively, present your personal QR code on the right to the workshop administrator to scan.
+                  </div>
+                </div>
               </div>
 
               {/* Token Info & Short Code */}
