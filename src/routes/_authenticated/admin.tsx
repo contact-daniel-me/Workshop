@@ -60,6 +60,7 @@ import {
   KeyRound,
   Trash2,
   ScanLine,
+  ScanFace,
 } from "lucide-react";
 import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
@@ -921,7 +922,7 @@ function AdminPage() {
               <CardContent className="p-3.5 flex items-center justify-between">
                 <div>
                   <span className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1.5">
-                    <ScanLine className="h-3.5 w-3.5 text-purple-600" /> Face-Based Attendance
+                    <ScanFace className="h-3.5 w-3.5 text-purple-600" /> Face-Based Attendance
                   </span>
                   <p className="text-xl font-bold font-display text-purple-700 mt-1">{dailyAttendanceStats.faceCount}</p>
                 </div>

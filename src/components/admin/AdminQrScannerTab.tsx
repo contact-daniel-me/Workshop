@@ -31,6 +31,9 @@ import {
   ArrowRight,
   RotateCcw,
   ScanLine,
+  ScanFace,
+  Users,
+  Target,
   UserCheck,
   Check,
   HelpCircle,
@@ -486,7 +489,7 @@ export function AdminQrScannerTab({
                     : "text-muted-foreground"
                 }`}
               >
-                <ScanLine className="h-4 w-4" /> Option B: Face Recognition
+                <ScanFace className="h-4 w-4" /> Option B: Face Recognition
               </Button>
             </div>
           </div>
@@ -880,7 +883,7 @@ export function AdminQrScannerTab({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="font-display text-lg font-bold flex items-center gap-2">
-                    <ScanLine className="h-5 w-5 text-purple-600" /> Face Recognition Verification
+                    <ScanFace className="h-5 w-5 text-purple-600" /> Face Recognition Verification
                   </CardTitle>
                   <CardDescription>
                     Capture attendee's face using the live camera to match against enrolled reference photos.
@@ -911,9 +914,9 @@ export function AdminQrScannerTab({
                     <Button
                       size="sm"
                       onClick={() => void startFaceCamera()}
-                      className="gap-2 font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-xs"
+                      className="gap-2 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-md hover:shadow-lg rounded-xl transition-all duration-200 active:scale-95 px-4 py-2"
                     >
-                      <Camera className="h-4 w-4" /> Start Face Camera
+                      <ScanFace className="h-4 w-4 text-purple-100" /> Start Face Camera
                     </Button>
                   )}
                 </div>
@@ -922,34 +925,47 @@ export function AdminQrScannerTab({
 
             <CardContent className="space-y-4 pt-1">
               {/* Optional 1-to-1 Targeted Participant Selector */}
-              <div className="p-3 rounded-xl bg-muted/40 border space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-                    <UserCheck className="h-4 w-4 text-primary" /> Mode:
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Button
+              <div className="p-3.5 rounded-2xl bg-muted/30 border border-muted-foreground/15 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="h-7 w-7 rounded-lg bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
+                      <ScanFace className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-foreground">Matching Scope</span>
+                      <p className="text-[11px] text-muted-foreground">Select candidate matching criteria</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center p-1 bg-muted/80 rounded-xl border border-muted-foreground/10 shrink-0 gap-1.5 flex-wrap sm:flex-nowrap">
+                    <button
                       type="button"
-                      size="xs"
-                      variant={!selectedParticipantId ? "default" : "outline"}
                       onClick={() => setSelectedParticipantId("")}
-                      className="text-[11px] h-7"
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                        !selectedParticipantId
+                          ? "bg-purple-700 text-white shadow-xs font-bold"
+                          : "text-muted-foreground hover:text-foreground hover:bg-card/50"
+                      }`}
                     >
-                      1-to-N Auto Match
-                    </Button>
-                    <Button
+                      <Users className="h-3.5 w-3.5 shrink-0" />
+                      <span>1-to-N Auto Match</span>
+                    </button>
+                    <button
                       type="button"
-                      size="xs"
-                      variant={selectedParticipantId ? "default" : "outline"}
                       onClick={() => {
                         if (approvedParticipants.length && !selectedParticipantId) {
                           setSelectedParticipantId(approvedParticipants[0]?.id || "");
                         }
                       }}
-                      className="text-[11px] h-7"
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                        selectedParticipantId
+                          ? "bg-purple-700 text-white shadow-xs font-bold"
+                          : "text-muted-foreground hover:text-foreground hover:bg-card/50"
+                      }`}
                     >
-                      1-to-1 Specific Attendee
-                    </Button>
+                      <Target className="h-3.5 w-3.5 shrink-0" />
+                      <span>1-to-1 Specific Attendee</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1019,7 +1035,7 @@ export function AdminQrScannerTab({
                     size="lg"
                     onClick={handleCaptureAndVerifyFace}
                     disabled={faceVerifying}
-                    className="gap-2 font-bold bg-purple-700 hover:bg-purple-800 text-white shadow-xl px-8 py-6 rounded-full text-base transition-transform active:scale-95"
+                    className="gap-2.5 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-2xl px-8 py-6 rounded-full text-base transition-all duration-200 active:scale-95 border border-white/20"
                   >
                     {faceVerifying ? (
                       <>
@@ -1027,7 +1043,7 @@ export function AdminQrScannerTab({
                       </>
                     ) : (
                       <>
-                        <ScanLine className="h-5 w-5" /> Verify Face
+                        <ScanFace className="h-5 w-5" /> Capture & Verify Face
                       </>
                     )}
                   </Button>
