@@ -563,30 +563,50 @@ function AdminPage() {
 
       {/* Main Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="flex w-full overflow-x-auto no-scrollbar sm:grid sm:grid-cols-4 lg:grid-cols-7 h-auto p-1 bg-muted/60 gap-1">
-          <TabsTrigger value="overview" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
+        {/* Mobile Quick Tab Dropdown */}
+        <div className="sm:hidden">
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="w-full h-11 bg-card border font-semibold text-sm shadow-xs">
+              <SelectValue placeholder="Select section" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="overview">📊 Overview & Analytics</SelectItem>
+              <SelectItem value="scanner">📷 Scan QR Code</SelectItem>
+              <SelectItem value="daily">📅 Daily Attendance</SelectItem>
+              <SelectItem value="qr">📺 Projector QR</SelectItem>
+              <SelectItem value="participants">👥 Participants ({totalRegistered})</SelectItem>
+              <SelectItem value="selfies">🛡️ Verifications {pendingSelfies > 0 ? `(${pendingSelfies})` : ""}</SelectItem>
+              <SelectItem value="exports">📄 Reports & Exports</SelectItem>
+              {me?.isSuper && <SelectItem value="settings">⚙️ Settings</SelectItem>}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Tab Pills Bar (Always starts from left, smoothly scrollable on mobile, grid on tablet/desktop) */}
+        <TabsList className="flex w-full overflow-x-auto justify-start items-center sm:grid sm:grid-cols-4 lg:grid-cols-7 h-auto p-1.5 bg-muted/60 gap-1 rounded-xl border">
+          <TabsTrigger value="overview" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <BarChart3 className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
-          <TabsTrigger value="scanner" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs font-bold text-primary">
+          <TabsTrigger value="scanner" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-bold text-primary">
             <Camera className="h-3.5 w-3.5 text-primary" /> Scan QR
           </TabsTrigger>
-          <TabsTrigger value="daily" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
+          <TabsTrigger value="daily" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <Calendar className="h-3.5 w-3.5" /> Daily Attendance
           </TabsTrigger>
-          <TabsTrigger value="qr" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
+          <TabsTrigger value="qr" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <QrCode className="h-3.5 w-3.5" /> Projector QR
           </TabsTrigger>
-          <TabsTrigger value="participants" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
+          <TabsTrigger value="participants" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <Users className="h-3.5 w-3.5" /> Participants ({totalRegistered})
           </TabsTrigger>
-          <TabsTrigger value="selfies" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
+          <TabsTrigger value="selfies" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <ShieldCheck className="h-3.5 w-3.5" /> Verifications {pendingSelfies > 0 && `(${pendingSelfies})`}
           </TabsTrigger>
-          <TabsTrigger value="exports" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
+          <TabsTrigger value="exports" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <FileSpreadsheet className="h-3.5 w-3.5" /> Reports
           </TabsTrigger>
           {me?.isSuper && (
-            <TabsTrigger value="settings" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
+            <TabsTrigger value="settings" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
               <SettingsIcon className="h-3.5 w-3.5" /> Settings
             </TabsTrigger>
           )}
