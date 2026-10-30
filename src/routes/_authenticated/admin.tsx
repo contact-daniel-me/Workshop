@@ -101,6 +101,7 @@ function AdminPage() {
   // Active Tab & Verification Console Mode (Default to taking attendance)
   const [activeTab, setActiveTab] = useState("scanner");
   const [verificationMode, setVerificationMode] = useState<"qr" | "face">("qr");
+  const [cameraTrigger, setCameraTrigger] = useState(1);
 
   // QR Display State
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -589,6 +590,7 @@ function AdminPage() {
             onClick={() => {
               setActiveTab("scanner");
               setVerificationMode("qr");
+              setCameraTrigger((prev) => prev + 1);
             }}
             className={`gap-2 text-xs sm:text-sm font-semibold shadow-xs transition-all ${
               activeTab === "scanner" && verificationMode === "qr"
@@ -606,6 +608,7 @@ function AdminPage() {
             onClick={() => {
               setActiveTab("scanner");
               setVerificationMode("face");
+              setCameraTrigger((prev) => prev + 1);
             }}
             className={`gap-2 text-xs sm:text-sm font-semibold shadow-xs transition-all ${
               activeTab === "scanner" && verificationMode === "face"
@@ -688,6 +691,8 @@ function AdminPage() {
             approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
             activeMode={verificationMode}
             onModeChange={setVerificationMode}
+            isTabActive={activeTab === "scanner"}
+            cameraTrigger={cameraTrigger}
           />
         </TabsContent>
 

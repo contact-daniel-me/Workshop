@@ -52,6 +52,8 @@ interface Props {
   }>;
   activeMode?: "qr" | "face";
   onModeChange?: (mode: "qr" | "face") => void;
+  isTabActive?: boolean;
+  cameraTrigger?: number;
 }
 
 export function AdminQrScannerTab({
@@ -60,6 +62,8 @@ export function AdminQrScannerTab({
   approvedParticipants = [],
   activeMode: controlledMode,
   onModeChange,
+  isTabActive = true,
+  cameraTrigger = 0,
 }: Props) {
   // Verification Mode: QR Scanner (Option A) vs Face Recognition (Option B)
   const [internalMode, setInternalMode] = useState<"qr" | "face">("qr");
@@ -134,25 +138,12 @@ export function AdminQrScannerTab({
   // Sync external mode changes
   useEffect(() => {
     if (controlledMode && controlledMode !== internalMode) {
-      stopQrCamera();
-      stopFaceCamera();
       setInternalMode(controlledMode);
       setQrVerificationResult(null);
       setQrConfirmedResult(null);
       setFaceResult(null);
     }
-  }, [controlledMode, internalMode, stopQrCamera, stopFaceCamera]);
-
-  // Handle mode change
-  const handleModeChange = (mode: "qr" | "face") => {
-    stopQrCamera();
-    stopFaceCamera();
-    setInternalMode(mode);
-    onModeChange?.(mode);
-    setQrVerificationResult(null);
-    setQrConfirmedResult(null);
-    setFaceResult(null);
-  };
+  }, [controlledMode, internalMode]);
 
   // =========================================================================
   // QR SCANNER LOGIC
@@ -225,54 +216,62 @@ export function AdminQrScannerTab({
     qrAnimationFrameRef.current = requestAnimationFrame(scanFrame);
   }, [processToken]);
 
-  const startQrCamera = async (mode = qrFacingMode) => {
-    stopQrCamera();
-    setQrCameraError(null);
-    setQrCameraLoading(true);
-    setQrVerificationResult(null);
-    setQrConfirmedResult(null);
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setQrCameraError("Camera access is not supported by your browser. Please enter code manually.");
-      setQrCameraLoading(false);
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: mode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
-
-      qrStreamRef.current = stream;
-      setQrScannerActive(true);
-
-      setTimeout(() => {
-        if (qrVideoRef.current) {
-          qrVideoRef.current.srcObject = stream;
-          qrVideoRef.current
-            .play()
-            .then(() => {
-              qrAnimationFrameRef.current = requestAnimationFrame(scanFrame);
-            })
-            .catch(() => {});
-        }
-        setQrCameraLoading(false);
-      }, 100);
-    } catch (err: unknown) {
+  const startQrCamera = useCallback(
+    async (mode = qrFacingMode) => {
       stopQrCamera();
-      const message =
-        err instanceof Error && err.name === "NotAllowedError"
-          ? "Camera permission was denied. Please allow camera permissions or enter the token manually."
-          : "Could not access camera. Please enter the token manually.";
-      setQrCameraError(message);
-      setQrCameraLoading(false);
-    }
-  };
+      setQrCameraError(null);
+      setQrCameraLoading(true);
+      setQrVerificationResult(null);
+      setQrConfirmedResult(null);
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setQrCameraError("Camera access is not supported by your browser. Please enter code manually.");
+        setQrCameraLoading(false);
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: mode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+
+        qrStreamRef.current = stream;
+        setQrScannerActive(true);
+
+        const attachVideo = (retries = 10) => {
+          if (qrVideoRef.current) {
+            qrVideoRef.current.srcObject = stream;
+            qrVideoRef.current
+              .play()
+              .then(() => {
+                qrAnimationFrameRef.current = requestAnimationFrame(scanFrame);
+              })
+              .catch(() => {});
+            setQrCameraLoading(false);
+          } else if (retries > 0) {
+            setTimeout(() => attachVideo(retries - 1), 50);
+          } else {
+            setQrCameraLoading(false);
+          }
+        };
+        setTimeout(() => attachVideo(), 50);
+      } catch (err: unknown) {
+        stopQrCamera();
+        const message =
+          err instanceof Error && err.name === "NotAllowedError"
+            ? "Camera permission was denied. Please allow camera permissions or enter the token manually."
+            : "Could not access camera. Please enter the token manually.";
+        setQrCameraError(message);
+        setQrCameraLoading(false);
+      }
+    },
+    [qrFacingMode, stopQrCamera, scanFrame],
+  );
 
   const toggleQrCameraFacing = () => {
     const nextMode = qrFacingMode === "environment" ? "user" : "environment";
@@ -317,48 +316,56 @@ export function AdminQrScannerTab({
   // =========================================================================
   // FACE RECOGNITION LOGIC
   // =========================================================================
-  const startFaceCamera = async (mode = faceFacingMode) => {
-    stopFaceCamera();
-    setFaceCameraError(null);
-    setFaceCameraLoading(true);
-    setFaceResult(null);
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setFaceCameraError("Camera access is not supported by your browser.");
-      setFaceCameraLoading(false);
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: mode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
-
-      faceStreamRef.current = stream;
-      setFaceCameraActive(true);
-
-      setTimeout(() => {
-        if (faceVideoRef.current) {
-          faceVideoRef.current.srcObject = stream;
-          faceVideoRef.current.play().catch(() => {});
-        }
-        setFaceCameraLoading(false);
-      }, 100);
-    } catch (err: unknown) {
+  const startFaceCamera = useCallback(
+    async (mode = faceFacingMode) => {
       stopFaceCamera();
-      const message =
-        err instanceof Error && err.name === "NotAllowedError"
-          ? "Camera permission was denied for face verification. Please grant camera permission."
-          : "Could not access camera for face verification.";
-      setFaceCameraError(message);
-      setFaceCameraLoading(false);
-    }
-  };
+      setFaceCameraError(null);
+      setFaceCameraLoading(true);
+      setFaceResult(null);
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setFaceCameraError("Camera access is not supported by your browser.");
+        setFaceCameraLoading(false);
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: mode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+
+        faceStreamRef.current = stream;
+        setFaceCameraActive(true);
+
+        const attachFaceVideo = (retries = 10) => {
+          if (faceVideoRef.current) {
+            faceVideoRef.current.srcObject = stream;
+            faceVideoRef.current.play().catch(() => {});
+            setFaceCameraLoading(false);
+          } else if (retries > 0) {
+            setTimeout(() => attachFaceVideo(retries - 1), 50);
+          } else {
+            setFaceCameraLoading(false);
+          }
+        };
+        setTimeout(() => attachFaceVideo(), 50);
+      } catch (err: unknown) {
+        stopFaceCamera();
+        const message =
+          err instanceof Error && err.name === "NotAllowedError"
+            ? "Camera permission was denied for face verification. Please grant camera permission."
+            : "Could not access camera for face verification.";
+        setFaceCameraError(message);
+        setFaceCameraLoading(false);
+      }
+    },
+    [faceFacingMode, stopFaceCamera],
+  );
 
   const toggleFaceCameraFacing = () => {
     const nextMode = faceFacingMode === "environment" ? "user" : "environment";
@@ -367,6 +374,54 @@ export function AdminQrScannerTab({
       void startFaceCamera(nextMode);
     }
   };
+
+  // Handle mode change
+  const handleModeChange = useCallback(
+    (mode: "qr" | "face") => {
+      stopQrCamera();
+      stopFaceCamera();
+      setInternalMode(mode);
+      onModeChange?.(mode);
+      setQrVerificationResult(null);
+      setQrConfirmedResult(null);
+      setFaceResult(null);
+
+      if (mode === "qr") {
+        void startQrCamera();
+      } else {
+        void startFaceCamera();
+      }
+    },
+    [stopQrCamera, stopFaceCamera, onModeChange, startQrCamera, startFaceCamera],
+  );
+
+  // Auto-start camera directly when tab becomes active, mode changes externally, or header buttons are clicked
+  useEffect(() => {
+    if (isTabActive === false) {
+      stopQrCamera();
+      stopFaceCamera();
+      return;
+    }
+
+    if (activeMode === "qr") {
+      stopFaceCamera();
+      void startQrCamera(qrFacingMode);
+    } else if (activeMode === "face") {
+      stopQrCamera();
+      void startFaceCamera(faceFacingMode);
+    }
+  }, [
+    isTabActive,
+    controlledMode,
+    cameraTrigger,
+    activeMode,
+    qrFacingMode,
+    faceFacingMode,
+    startQrCamera,
+    startFaceCamera,
+    stopQrCamera,
+    stopFaceCamera,
+  ]);
 
   // Capture face and submit to backend verification function
   const handleCaptureAndVerifyFace = async () => {
