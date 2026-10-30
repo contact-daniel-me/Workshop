@@ -59,13 +59,14 @@ import {
   Camera,
   KeyRound,
   Trash2,
-  ScanLine,
   ScanFace,
+  IdCard,
 } from "lucide-react";
 import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { ChangeParticipantPasswordDialog } from "@/components/admin/ChangeParticipantPasswordDialog";
 import { DeleteParticipantDialog } from "@/components/admin/DeleteParticipantDialog";
+import { AdminDigitalIdDialog } from "@/components/id-card/AdminDigitalIdDialog";
 import { PhotoCaptureInput } from "@/components/auth/PhotoCaptureInput";
 import { fileToBase64 } from "@/lib/image-validation";
 import { uploadRegistrationPhoto } from "@/lib/lookup.functions";
@@ -146,6 +147,7 @@ function AdminPage() {
   // Participant Management Action Dialogs (Change Password & Delete Participant)
   const [passwordTargetUser, setPasswordTargetUser] = useState<{ id: string; full_name: string; participant_code: string } | null>(null);
   const [deleteTargetUser, setDeleteTargetUser] = useState<{ id: string; full_name: string; participant_code: string; email?: string; phone?: string; photoUrl?: string | null } | null>(null);
+  const [digitalIdTarget, setDigitalIdTarget] = useState<ParticipantRow | null>(null);
   const [adminPhotoModalOpen, setAdminPhotoModalOpen] = useState(false);
   const [adminPhotoTargetUser, setAdminPhotoTargetUser] = useState<{ id: string; full_name: string } | null>(null);
   const [adminSelectedPhoto, setAdminSelectedPhoto] = useState<File | null>(null);
@@ -1340,6 +1342,16 @@ function AdminPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                  title="Digital Participant ID Card"
+                                  onClick={() => setDigitalIdTarget(p)}
+                                >
+                                  <IdCard className="h-4 w-4" />
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
                                   title="Change Password"
                                   onClick={() =>
@@ -1953,6 +1965,14 @@ function AdminPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    className="flex-1 sm:flex-none gap-1.5 text-xs text-emerald-700 hover:text-emerald-800 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold"
+                    onClick={() => setDigitalIdTarget(selectedParticipant)}
+                  >
+                    <IdCard className="h-3.5 w-3.5 text-emerald-600" /> View Digital ID Card
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     className="flex-1 sm:flex-none gap-1.5 text-xs text-amber-700 hover:text-amber-800 border-amber-300"
                     onClick={() => {
                       setPasswordTargetUser({
@@ -2011,6 +2031,19 @@ function AdminPage() {
           }
           void refetch();
         }}
+      />
+
+      {/* Digital Participant ID Card Preview & Export Dialog */}
+      <AdminDigitalIdDialog
+        open={!!digitalIdTarget}
+        onOpenChange={(open) => !open && setDigitalIdTarget(null)}
+        participant={digitalIdTarget}
+        settings={settings}
+        photoUrl={
+          digitalIdTarget?.id
+            ? photoUrls[adminData?.profiles.find((x) => x.id === digitalIdTarget.id)?.photo_path ?? ""]
+            : undefined
+        }
       />
 
       {/* Admin Participant Photo Upload Dialog */}

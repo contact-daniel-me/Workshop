@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMe, useSettings, useMyAttendance, signedUrls } from "@/lib/use-me";
-import { todayLocal, workshopDays } from "@/lib/attendance";
+import { todayLocal, workshopDays, addDays } from "@/lib/attendance";
 import { generateIndividualReportWorkbook, downloadExcelFile } from "@/lib/excel";
 import { StatusPill, DayCell } from "@/components/app/status";
 import { QrCheckinDialog } from "@/components/app/qr-checkin-dialog";
@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
+import { DigitalParticipantIdCard } from "@/components/id-card/DigitalParticipantIdCard";
 import {
   CalendarDays,
   QrCode,
@@ -24,6 +25,7 @@ import {
   Lock,
   Camera,
   RefreshCw,
+  IdCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -101,6 +103,44 @@ function DashboardPage() {
   const isApproved = me?.profile?.verification_status === "verified";
   const isPending = !me?.profile?.verification_status || me?.profile?.verification_status === "pending";
   const isRejected = me?.profile?.verification_status === "rejected";
+
+  const [dashboardTab, setDashboardTab] = useState<"attendance" | "digital-id">("attendance");
+
+  const digitalIdData = useMemo(() => {
+    if (!me?.user || !me?.profile) return null;
+    const startDate = settings?.start_date || "2026-11-01";
+    const durationDays = settings?.duration_days || 30;
+    const endDate = addDays(startDate, durationDays - 1);
+
+    return {
+      id: me.user.id,
+      fullName: me.profile.full_name,
+      participantCode: me.profile.participant_code,
+      email: me.profile.email,
+      phone: me.profile.phone,
+      photoUrl,
+      photoPath: me.profile.photo_path,
+      verificationStatus: me.profile.verification_status,
+      workshopName: settings?.name || "Workshop Attendance",
+      startDate,
+      endDate,
+      durationDays,
+      institutionName: "GrowIOTA Innovations",
+    };
+  }, [me, settings, photoUrl]);
+
+  const digitalIdStats = useMemo(() => {
+    if (!summary) return null;
+    return {
+      present: summary.present,
+      absent: summary.absent,
+      eligible: summary.eligible,
+      total: summary.total,
+      remaining: summary.remaining,
+      currentPct: summary.currentPct,
+      finalPct: summary.finalPct,
+    };
+  }, [summary]);
 
   const handleDownloadExcel = async () => {
     if (!me?.profile || !settings || !summary) return;
@@ -201,6 +241,16 @@ function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={dashboardTab === "digital-id" ? "default" : "outline"}
+            onClick={() => setDashboardTab((curr) => (curr === "digital-id" ? "attendance" : "digital-id"))}
+            className="gap-2 text-xs sm:text-sm font-bold shadow-xs border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+          >
+            <IdCard className="h-4 w-4 text-emerald-600" />
+            <span>My Digital ID</span>
+          </Button>
+
           {isApproved && isWorkshopDay && (
             <Button
               size="sm"
@@ -225,7 +275,53 @@ function DashboardPage() {
         </div>
       </div>
 
-      {/* REQUIREMENT 4: PENDING APPROVAL SCREEN */}
+      {/* Participant Navigation Tabs */}
+      <div className="flex items-center p-1 bg-muted/80 rounded-2xl border w-full sm:w-auto self-start gap-1">
+        <Button
+          size="sm"
+          variant={dashboardTab === "attendance" ? "default" : "ghost"}
+          onClick={() => setDashboardTab("attendance")}
+          className={`gap-2 text-xs font-bold rounded-xl flex-1 sm:flex-initial transition-all ${
+            dashboardTab === "attendance" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
+          }`}
+        >
+          <QrCode className="h-4 w-4 text-primary" /> Attendance & QR
+        </Button>
+        <Button
+          size="sm"
+          variant={dashboardTab === "digital-id" ? "default" : "ghost"}
+          onClick={() => setDashboardTab("digital-id")}
+          className={`gap-2 text-xs font-bold rounded-xl flex-1 sm:flex-initial transition-all ${
+            dashboardTab === "digital-id" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
+          }`}
+        >
+          <IdCard className="h-4 w-4 text-emerald-600" /> My Digital ID
+        </Button>
+      </div>
+
+      {/* SECTION 1: MY DIGITAL ID TAB */}
+      {dashboardTab === "digital-id" && digitalIdData && (
+        <div className="space-y-6">
+          <div className="border-b pb-3">
+            <h2 className="font-display text-2xl font-bold text-foreground flex items-center gap-2">
+              <IdCard className="h-6 w-6 text-emerald-600" /> Smart Digital Participant ID Card
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+              Your official institutional event pass, dynamic attendance credential, and access card.
+            </p>
+          </div>
+
+          <DigitalParticipantIdCard
+            data={digitalIdData}
+            stats={digitalIdStats}
+          />
+        </div>
+      )}
+
+      {/* SECTION 2: ATTENDANCE & QR OVERVIEW TAB */}
+      {dashboardTab === "attendance" && (
+        <>
+          {/* REQUIREMENT 4: PENDING APPROVAL SCREEN */}
       {isPending && (
         <Card className="border-warning/40 bg-warning/5 shadow-sm">
           <CardContent className="flex flex-col items-center justify-center p-8 sm:p-12 text-center space-y-4">
@@ -436,58 +532,60 @@ function DashboardPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* QR Check-in Modal */}
-          <QrCheckinDialog
-            open={scanModalOpen}
-            onOpenChange={setScanModalOpen}
-            requireSelfie={settings?.require_selfie}
-            userId={me?.user?.id}
-          />
-
-          {/* Upload/Update Profile Photo Modal */}
-          <Dialog open={photoModalOpen} onOpenChange={setPhotoModalOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="font-display text-lg flex items-center gap-2">
-                  <Camera className="h-5 w-5 text-primary" /> Update Profile Photograph
-                </DialogTitle>
-                <DialogDescription className="text-xs">
-                  Capture a selfie or upload a clear front-facing photograph for your profile and attendance records.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="py-2">
-                <PhotoCaptureInput
-                  value={selectedPhoto}
-                  onChange={setSelectedPhoto}
-                  disabled={uploadingPhoto}
-                />
-              </div>
-
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button variant="outline" size="sm" onClick={() => setPhotoModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={!selectedPhoto || uploadingPhoto}
-                  onClick={handleSavePhoto}
-                  className="gap-2 font-bold"
-                >
-                  {uploadingPhoto ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" /> Uploading…
-                    </>
-                  ) : (
-                    "Save Photograph"
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </>
       )}
+      </>
+      )}
+
+      {/* QR Check-in Modal */}
+      <QrCheckinDialog
+        open={scanModalOpen}
+        onOpenChange={setScanModalOpen}
+        requireSelfie={settings?.require_selfie}
+        userId={me?.user?.id}
+      />
+
+      {/* Upload/Update Profile Photo Modal */}
+      <Dialog open={photoModalOpen} onOpenChange={setPhotoModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg flex items-center gap-2">
+              <Camera className="h-5 w-5 text-primary" /> Update Profile Photograph
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Capture a selfie or upload a clear front-facing photograph for your profile and attendance records.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2">
+            <PhotoCaptureInput
+              value={selectedPhoto}
+              onChange={setSelectedPhoto}
+              disabled={uploadingPhoto}
+            />
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setPhotoModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!selectedPhoto || uploadingPhoto}
+              onClick={handleSavePhoto}
+              className="gap-2 font-bold"
+            >
+              {uploadingPhoto ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Uploading…
+                </>
+              ) : (
+                "Save Photograph"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -30,7 +30,6 @@ import {
   Sparkles,
   ArrowRight,
   RotateCcw,
-  ScanLine,
   ScanFace,
   Users,
   Target,
