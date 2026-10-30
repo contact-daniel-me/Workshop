@@ -225,22 +225,6 @@ function AdminPage() {
     }
   }, [adminData?.activeQr]);
 
-  // Access check
-  if (!meLoading && !me?.isStaff) {
-    return (
-      <div className="container mx-auto max-w-lg px-4 py-20 text-center">
-        <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
-        <h1 className="mt-4 font-display text-2xl font-bold">Unauthorized Access</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          You must have administrator privileges to view this portal.
-        </p>
-        <Button className="mt-6" onClick={() => navigate({ to: "/dashboard" })}>
-          Return to Participant Dashboard
-        </Button>
-      </div>
-    );
-  }
-
   const today = todayLocal();
   const allDays = settings ? workshopDays(settings) : [];
 
@@ -398,6 +382,33 @@ function AdminPage() {
       rows,
     };
   }, [adminData, dailyDate, dailySearch, dailyStatusFilter]);
+
+  // Loading & Access Checks (placed strictly AFTER all hooks to adhere to React Rules of Hooks)
+  if (meLoading || dataLoading) {
+    return (
+      <div className="container mx-auto flex min-h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <RotateCw className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm font-medium text-muted-foreground">Loading administrator portal…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!me?.isStaff) {
+    return (
+      <div className="container mx-auto max-w-lg px-4 py-20 text-center">
+        <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
+        <h1 className="mt-4 font-display text-2xl font-bold">Unauthorized Access</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          You must have administrator privileges to view this portal.
+        </p>
+        <Button className="mt-6" onClick={() => navigate({ to: "/dashboard" })}>
+          Return to Participant Dashboard
+        </Button>
+      </div>
+    );
+  }
 
   // Handlers
   const handleGenerateQr = async () => {
