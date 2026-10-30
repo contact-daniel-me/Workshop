@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import QRCode from "qrcode";
 import { getParticipantDailyQr, type ParticipantQrResponse } from "@/lib/attendance-qr.server";
+import { getNextSessionUnlockTime } from "@/lib/attendance";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,8 +28,67 @@ interface Props {
   verificationStatus?: string;
   todayDate: string;
   isWorkshopDay: boolean;
+  isLastWorkshopDay?: boolean;
   onAttendanceUpdated?: () => void;
   onOpenScanner?: () => void;
+}
+
+function SessionCountdownTimer({
+  hours,
+  minutes,
+  seconds,
+  title = "Next QR code will generate at 12:00 PM",
+  subtitle,
+}: {
+  hours: number;
+  minutes: number;
+  seconds: number;
+  title?: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center p-5 rounded-2xl border-2 border-primary/20 bg-muted/30 shadow-xs max-w-md w-full space-y-3.5 text-center">
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold">
+        <Clock className="h-3.5 w-3.5 shrink-0" />
+        <span>{title}</span>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 sm:gap-3 font-mono">
+        <div className="flex flex-col items-center bg-card border rounded-xl px-3 py-2 min-w-[62px] sm:min-w-[68px] shadow-xs">
+          <span className="text-2xl sm:text-3xl font-extrabold text-foreground">
+            {String(hours).padStart(2, "0")}
+          </span>
+          <span className="text-[10px] text-muted-foreground uppercase font-sans tracking-wider font-semibold">
+            Hours
+          </span>
+        </div>
+        <span className="text-2xl font-bold text-muted-foreground -mt-3.5">:</span>
+        <div className="flex flex-col items-center bg-card border rounded-xl px-3 py-2 min-w-[62px] sm:min-w-[68px] shadow-xs">
+          <span className="text-2xl sm:text-3xl font-extrabold text-foreground">
+            {String(minutes).padStart(2, "0")}
+          </span>
+          <span className="text-[10px] text-muted-foreground uppercase font-sans tracking-wider font-semibold">
+            Mins
+          </span>
+        </div>
+        <span className="text-2xl font-bold text-muted-foreground -mt-3.5">:</span>
+        <div className="flex flex-col items-center bg-card border rounded-xl px-3 py-2 min-w-[62px] sm:min-w-[68px] shadow-xs">
+          <span className="text-2xl sm:text-3xl font-extrabold text-primary">
+            {String(seconds).padStart(2, "0")}
+          </span>
+          <span className="text-[10px] text-muted-foreground uppercase font-sans tracking-wider font-semibold">
+            Secs
+          </span>
+        </div>
+      </div>
+
+      {subtitle && (
+        <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function ParticipantAttendanceQrCard({
@@ -39,6 +99,7 @@ export function ParticipantAttendanceQrCard({
   verificationStatus = "verified",
   todayDate,
   isWorkshopDay,
+  isLastWorkshopDay = false,
   onAttendanceUpdated,
   onOpenScanner,
 }: Props) {
@@ -89,7 +150,9 @@ export function ParticipantAttendanceQrCard({
           onAttendanceUpdated?.();
         }
       } else {
-        setErrorMsg(res.message);
+        if (res.code !== "LOCKED_UNTIL_SESSION_TIME") {
+          setErrorMsg(res.message);
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load attendance QR";
@@ -105,7 +168,7 @@ export function ParticipantAttendanceQrCard({
     void fetchDailyQr();
   }, [fetchDailyQr]);
 
-  // Expiration countdown timer
+  // Expiration countdown timer for active QR token
   useEffect(() => {
     if (timerRef.current) window.clearInterval(timerRef.current);
 
@@ -129,6 +192,48 @@ export function ParticipantAttendanceQrCard({
   // Auto-refresh when expired if user is viewing
   const isExpired = qrData?.code === "ACTIVE_QR" && timeLeftSec <= 0 && !!qrData?.expiresAt;
   const isAlreadyPresent = qrData?.code === "ALREADY_PRESENT" || qrData?.alreadyMarked;
+  const isLockedUntilNoon = qrData?.code === "LOCKED_UNTIL_SESSION_TIME";
+
+  // Session unlock countdown timer (to 12:00 PM IST)
+  const [unlockTimeLeftSec, setUnlockTimeLeftSec] = useState<number>(0);
+
+  useEffect(() => {
+    const targetIso =
+      qrData?.unlocksAt ||
+      (isAlreadyPresent
+        ? getNextSessionUnlockTime(todayDate, true)
+        : isLockedUntilNoon
+        ? getNextSessionUnlockTime(todayDate, false)
+        : null);
+
+    if (!targetIso) {
+      setUnlockTimeLeftSec(0);
+      return;
+    }
+
+    const calcDiff = () => {
+      const diffMs = new Date(targetIso).getTime() - Date.now();
+      return Math.max(0, Math.floor(diffMs / 1000));
+    };
+
+    setUnlockTimeLeftSec(calcDiff());
+
+    const interval = window.setInterval(() => {
+      const remaining = calcDiff();
+      setUnlockTimeLeftSec(remaining);
+      if (remaining <= 0) {
+        window.clearInterval(interval);
+        // Automatically fetch QR once 12:00 PM is reached!
+        void fetchDailyQr(true);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [qrData?.unlocksAt, isLockedUntilNoon, isAlreadyPresent, todayDate, fetchDailyQr]);
+
+  const unlockHours = Math.floor(unlockTimeLeftSec / 3600);
+  const unlockMinutes = Math.floor((unlockTimeLeftSec % 3600) / 60);
+  const unlockSeconds = unlockTimeLeftSec % 60;
 
   const minutes = Math.floor(timeLeftSec / 60);
   const seconds = timeLeftSec % 60;
@@ -158,7 +263,7 @@ export function ParticipantAttendanceQrCard({
 
           {/* Status Badge & Scan Trigger */}
           <div className="flex items-center gap-2">
-            {!isAlreadyPresent && isWorkshopDay && isApproved && onOpenScanner && (
+            {!isAlreadyPresent && !isLockedUntilNoon && isWorkshopDay && isApproved && onOpenScanner && (
               <Button
                 size="sm"
                 onClick={onOpenScanner}
@@ -170,6 +275,10 @@ export function ParticipantAttendanceQrCard({
             {isAlreadyPresent ? (
               <Badge className="bg-emerald-600 text-white gap-1.5 px-3 py-1 font-semibold text-xs">
                 <CheckCircle2 className="h-3.5 w-3.5" /> Present
+              </Badge>
+            ) : isLockedUntilNoon ? (
+              <Badge variant="outline" className="border-primary/40 bg-primary/5 text-primary gap-1.5 px-3 py-1 font-semibold text-xs">
+                <Clock className="h-3.5 w-3.5 text-primary" /> Opens at 12:00 PM
               </Badge>
             ) : isWorkshopDay ? (
               <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800 gap-1.5 px-3 py-1 font-semibold text-xs">
@@ -187,9 +296,9 @@ export function ParticipantAttendanceQrCard({
       <CardContent className="p-6">
         {/* Case 1: Attendance Already Marked for Today */}
         {isAlreadyPresent ? (
-          <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
-            <div className="h-20 w-20 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center shadow-inner">
-              <CheckCircle2 className="h-10 w-10" />
+          <div className="flex flex-col items-center justify-center py-6 text-center space-y-5">
+            <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center shadow-inner">
+              <CheckCircle2 className="h-8 w-8" />
             </div>
             <div className="space-y-1.5 max-w-sm">
               <h3 className="font-display text-2xl font-bold text-foreground">
@@ -199,16 +308,61 @@ export function ParticipantAttendanceQrCard({
                 You are marked <strong className="text-emerald-600 font-semibold">PRESENT</strong> for today's workshop session ({todayDate}).
               </p>
               {qrData?.checkedInAt && (
-                <div className="pt-2">
+                <div className="pt-1">
                   <Badge variant="outline" className="font-mono text-xs text-muted-foreground bg-muted/40">
                     Checked in at: {new Date(qrData.checkedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </Badge>
                 </div>
               )}
             </div>
-            <p className="text-xs text-muted-foreground/80 max-w-xs">
-              Every presence matters. Your attendance has been verified by the workshop administrator.
-            </p>
+
+            {/* Next Day QR Code Generation & Countdown Timer */}
+            {!isLastWorkshopDay ? (
+              <SessionCountdownTimer
+                hours={unlockHours}
+                minutes={unlockMinutes}
+                seconds={unlockSeconds}
+                title="Next QR code will generate at 12:00 PM"
+                subtitle="Your attendance QR code for the next session will automatically become available tomorrow at 12:00 PM."
+              />
+            ) : (
+              <div className="p-4 rounded-xl border bg-muted/30 text-xs text-muted-foreground max-w-xs">
+                You have completed all scheduled workshop sessions! Thank you for your active participation.
+              </div>
+            )}
+          </div>
+        ) : isLockedUntilNoon ? (
+          /* Case 1B: Workshop day, but before 12:00 PM (Locked) */
+          <div className="flex flex-col items-center justify-center py-8 text-center space-y-5">
+            <div className="h-16 w-16 rounded-full bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+              <Clock className="h-8 w-8" />
+            </div>
+            <div className="space-y-1.5 max-w-sm">
+              <h3 className="font-display text-2xl font-bold text-foreground">
+                Session Opens at 12:00 PM
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Today's workshop attendance session ({todayDate}) opens at 12:00 PM.
+              </p>
+            </div>
+
+            <SessionCountdownTimer
+              hours={unlockHours}
+              minutes={unlockMinutes}
+              seconds={unlockSeconds}
+              title="Next QR code will generate at 12:00 PM"
+              subtitle="The countdown is active. Your personal attendance QR code will automatically unlock and appear when the timer reaches zero."
+            />
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void fetchDailyQr(true)}
+              disabled={loading}
+              className="gap-1.5 text-xs font-semibold"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh Status
+            </Button>
           </div>
         ) : !isWorkshopDay ? (
           /* Case 2: No Workshop Session Scheduled */

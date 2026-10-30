@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { todayLocal, workshopDays } from "./attendance";
+import { todayLocal, workshopDays, getKolkataTime, getNextSessionUnlockTime } from "./attendance";
 import { computeVisualFeatureSimilarity, fetchStorageImage } from "./face-verification.server";
 
 export interface ParticipantQrResponse {
@@ -10,12 +10,14 @@ export interface ParticipantQrResponse {
     | "ALREADY_PRESENT"
     | "NOT_APPROVED"
     | "NO_SESSION_SCHEDULED"
+    | "LOCKED_UNTIL_SESSION_TIME"
     | "ERROR"
     | "UNAUTHORIZED";
   message: string;
   token?: string;
   shortCode?: string;
   expiresAt?: string;
+  unlocksAt?: string;
   dayDate?: string;
   alreadyMarked?: boolean;
   status?: string;
@@ -103,6 +105,7 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
       .maybeSingle();
 
     if (existingAttendance && (existingAttendance.status === "present" || existingAttendance.status === "pending")) {
+      const nextUnlock = getNextSessionUnlockTime(today, true);
       return {
         ok: true,
         code: "ALREADY_PRESENT",
@@ -110,11 +113,26 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
         status: existingAttendance.status,
         checkedInAt: existingAttendance.checked_in_at,
         dayDate: today,
+        unlocksAt: nextUnlock,
         message: `Attendance is already recorded as ${existingAttendance.status.toUpperCase()} for today.`,
       };
     }
 
-    // 5. Check if an active, unexpired, unused token exists for today
+    // 5. Restrict QR generation until 12:00 PM (Noon) IST for participants
+    const kolkata = getKolkataTime();
+    const isStaffOperation = targetId !== userId;
+    if (kolkata.hour < 12 && !isStaffOperation) {
+      const unlocksAt = getNextSessionUnlockTime(today, false);
+      return {
+        ok: false,
+        code: "LOCKED_UNTIL_SESSION_TIME",
+        dayDate: today,
+        unlocksAt,
+        message: "Today's attendance QR code will generate at 12:00 PM.",
+      };
+    }
+
+    // 6. Check if an active, unexpired, unused token exists for today
     const nowIso = new Date().toISOString();
     const expiryBufferTime = new Date(Date.now() + 30_000).toISOString();
 

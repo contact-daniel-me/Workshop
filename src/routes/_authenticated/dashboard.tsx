@@ -359,6 +359,7 @@ function DashboardPage() {
             verificationStatus={me?.profile?.verification_status}
             todayDate={today}
             isWorkshopDay={isWorkshopDay}
+            isLastWorkshopDay={settings ? workshopDays(settings).slice(-1)[0] === today : false}
             onOpenScanner={() => setScanModalOpen(true)}
             onAttendanceUpdated={() => {
               void qc.invalidateQueries({ queryKey: ["my_attendance"] });

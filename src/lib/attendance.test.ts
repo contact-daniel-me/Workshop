@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { summarize, safeCell, INDIAN_PHONE, normalizePhone } from "./attendance";
+import {
+  summarize,
+  safeCell,
+  INDIAN_PHONE,
+  normalizePhone,
+  getKolkataTime,
+  getNextSessionUnlockTime,
+  SESSION_START_HOUR,
+} from "./attendance";
 import { generate30DayWorkbook, generateDailyReportWorkbook } from "./excel";
 
 const s = { start_date: "2026-11-01", duration_days: 30, name: "Workshop Attendance", qr_validity_minutes: 15, require_selfie: false, low_attendance_threshold: 75 };
@@ -44,6 +52,23 @@ describe("helpers", () => {
   it("validates Indian phones", () => {
     expect(INDIAN_PHONE.test(normalizePhone("+91 98765 43210"))).toBe(true);
     expect(INDIAN_PHONE.test("12345")).toBe(false);
+  });
+  it("calculates session unlock at 12:00 PM IST correctly", () => {
+    expect(SESSION_START_HOUR).toBe(12);
+
+    // Morning at 9:00 AM IST (not yet marked) -> unlocks today at 12:00 PM
+    const morningDate = new Date("2026-11-02T03:30:00.000Z"); // 03:30 UTC = 09:00 IST
+    const unlockMorning = getNextSessionUnlockTime("2026-11-02", false, morningDate);
+    expect(unlockMorning).toBe("2026-11-02T12:00:00+05:30");
+
+    // Afternoon at 1:00 PM IST (already marked) -> unlocks tomorrow at 12:00 PM
+    const afternoonDate = new Date("2026-11-02T07:30:00.000Z"); // 07:30 UTC = 13:00 IST
+    const unlockTomorrow = getNextSessionUnlockTime("2026-11-02", true, afternoonDate);
+    expect(unlockTomorrow).toBe("2026-11-03T12:00:00+05:30");
+
+    // Past 12:00 PM even if not marked -> unlocks tomorrow at 12:00 PM
+    const unlockPastNoon = getNextSessionUnlockTime("2026-11-02", false, afternoonDate);
+    expect(unlockPastNoon).toBe("2026-11-03T12:00:00+05:30");
   });
 });
 
