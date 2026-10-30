@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { toPng } from "html-to-image";
 import { toast } from "sonner";
 import { getParticipantDailyQr, type ParticipantQrResponse } from "@/lib/attendance-qr.server";
-import { getNextSessionUnlockTime } from "@/lib/attendance";
+import { getNextSessionUnlockTime, todayLocal } from "@/lib/attendance";
 import {
   ParticipantIdCardFront,
   type ParticipantIdCardData,
@@ -121,15 +121,16 @@ export function DigitalParticipantIdCard({
     };
   }, [qrTimeLeftSec]);
 
-  // 12:00 PM session unlock countdown
+  // 12:00 AM session unlock countdown
   useEffect(() => {
     const isLocked = qrData?.code === "LOCKED_UNTIL_SESSION_TIME";
+    const today = todayLocal();
     const targetIso =
       qrData?.unlocksAt ||
       (qrData?.code === "ALREADY_PRESENT"
-        ? getNextSessionUnlockTime(data.startDate, true)
+        ? getNextSessionUnlockTime(today, true)
         : isLocked
-        ? getNextSessionUnlockTime(data.startDate, false)
+        ? getNextSessionUnlockTime(today, false)
         : null);
 
     if (!targetIso) {
@@ -485,3 +486,4 @@ export function DigitalParticipantIdCard({
     </div>
   );
 }
+

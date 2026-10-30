@@ -197,3 +197,4 @@ export function ParticipantIdCardFront({ data, onFlip, showFlipPrompt = true }: 
     </div>
   );
 }
+

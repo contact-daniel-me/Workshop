@@ -118,17 +118,17 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
       };
     }
 
-    // 5. Restrict QR generation until 12:00 PM (Noon) IST for participants
+    // 5. Restrict QR generation until session start (12:00 AM Midnight IST)
     const kolkata = getKolkataTime();
     const isStaffOperation = targetId !== userId;
-    if (kolkata.hour < 12 && !isStaffOperation) {
+    if (SESSION_START_HOUR > 0 && kolkata.hour < SESSION_START_HOUR && !isStaffOperation) {
       const unlocksAt = getNextSessionUnlockTime(today, false);
       return {
         ok: false,
         code: "LOCKED_UNTIL_SESSION_TIME",
         dayDate: today,
         unlocksAt,
-        message: "Today's attendance QR code will generate at 12:00 PM.",
+        message: "Today's attendance QR code will generate at 12:00 AM.",
       };
     }
 

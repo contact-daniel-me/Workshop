@@ -12,7 +12,7 @@ export interface Settings {
 }
 
 export const TZ = "Asia/Kolkata";
-export const SESSION_START_HOUR = 12; // 12:00 PM (Noon)
+export const SESSION_START_HOUR = 0; // 12:00 AM (Midnight)
 
 export function getKolkataTime(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -51,18 +51,15 @@ export function getKolkataTime(now = new Date()) {
 }
 
 /**
- * Returns the ISO string of the target 12:00 PM (Noon) IST for QR generation.
- * - If already marked today, or if it is currently at/after 12:00 PM on a workshop day,
- *   the next session generates tomorrow at 12:00 PM.
- * - If not yet marked today and it is currently before 12:00 PM,
- *   the session QR generates today at 12:00 PM.
+ * Returns the ISO string of the target 12:00 AM (Midnight) IST for QR generation.
+ * - When already marked today, the next session QR generates tomorrow at 12:00 AM (midnight: 00:00:00 IST).
+ * - If not yet marked today, the session QR starts at 12:00 AM (midnight: 00:00:00 IST) of the target day.
  */
-export function getNextSessionUnlockTime(todayDate: string, isAlreadyMarked: boolean, now = new Date()): string {
-  const kolkata = getKolkataTime(now);
-  if (isAlreadyMarked || kolkata.hour >= SESSION_START_HOUR) {
-    return `${addDays(todayDate, 1)}T12:00:00+05:30`;
+export function getNextSessionUnlockTime(todayDate: string, isAlreadyMarked: boolean, _now = new Date()): string {
+  if (isAlreadyMarked) {
+    return `${addDays(todayDate, 1)}T00:00:00+05:30`;
   }
-  return `${todayDate}T12:00:00+05:30`;
+  return `${todayDate}T00:00:00+05:30`;
 }
 
 export function todayLocal(now: Date = new Date()): string {

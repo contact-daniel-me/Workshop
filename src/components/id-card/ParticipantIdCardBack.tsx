@@ -90,13 +90,13 @@ export function ParticipantIdCardBack({
           ) : isLockedUntilNoon ? (
             <div className="h-44 w-44 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-3 text-center space-y-1.5">
               <Clock className="h-8 w-8 text-primary" />
-              <p className="font-bold text-xs text-slate-800 font-display">Opens at 12:00 PM</p>
+              <p className="font-bold text-xs text-slate-800 font-display">Opens at 12:00 AM</p>
               {unlockTimeFormatted && (
                 <div className="font-mono font-bold text-xs text-primary bg-primary/10 px-2 py-1 rounded-md">
                   {unlockTimeFormatted}
                 </div>
               )}
-              <p className="text-[9px] text-slate-500 leading-tight">Session unlocks at 12:00 PM</p>
+              <p className="text-[9px] text-slate-500 leading-tight">Session unlocks at 12:00 AM</p>
             </div>
           ) : !isApproved ? (
             <div className="h-44 w-44 rounded-xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center p-3 text-center space-y-2">
@@ -219,3 +219,4 @@ export function ParticipantIdCardBack({
     </div>
   );
 }
+

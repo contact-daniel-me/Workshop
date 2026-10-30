@@ -37,7 +37,7 @@ function SessionCountdownTimer({
   hours,
   minutes,
   seconds,
-  title = "Next QR code will generate at 12:00 PM",
+  title = "Next QR code will generate at 12:00 AM",
   subtitle,
 }: {
   hours: number;
@@ -194,7 +194,7 @@ export function ParticipantAttendanceQrCard({
   const isAlreadyPresent = qrData?.code === "ALREADY_PRESENT" || qrData?.alreadyMarked;
   const isLockedUntilNoon = qrData?.code === "LOCKED_UNTIL_SESSION_TIME";
 
-  // Session unlock countdown timer (to 12:00 PM IST)
+  // Session unlock countdown timer (to 12:00 AM Midnight IST)
   const [unlockTimeLeftSec, setUnlockTimeLeftSec] = useState<number>(0);
 
   useEffect(() => {
@@ -223,7 +223,7 @@ export function ParticipantAttendanceQrCard({
       setUnlockTimeLeftSec(remaining);
       if (remaining <= 0) {
         window.clearInterval(interval);
-        // Automatically fetch QR once 12:00 PM is reached!
+        // Automatically fetch QR once 12:00 AM is reached!
         void fetchDailyQr(true);
       }
     }, 1000);
@@ -278,7 +278,7 @@ export function ParticipantAttendanceQrCard({
               </Badge>
             ) : isLockedUntilNoon ? (
               <Badge variant="outline" className="border-primary/40 bg-primary/5 text-primary gap-1.5 px-3 py-1 font-semibold text-xs">
-                <Clock className="h-3.5 w-3.5 text-primary" /> Opens at 12:00 PM
+                <Clock className="h-3.5 w-3.5 text-primary" /> Opens at 12:00 AM
               </Badge>
             ) : isWorkshopDay ? (
               <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800 gap-1.5 px-3 py-1 font-semibold text-xs">
@@ -322,8 +322,8 @@ export function ParticipantAttendanceQrCard({
                 hours={unlockHours}
                 minutes={unlockMinutes}
                 seconds={unlockSeconds}
-                title="Next QR code will generate at 12:00 PM"
-                subtitle="Your attendance QR code for the next session will automatically become available tomorrow at 12:00 PM."
+                title="Next QR code will generate at 12:00 AM"
+                subtitle="Your attendance QR code for the next session will automatically become available tomorrow at 12:00 AM."
               />
             ) : (
               <div className="p-4 rounded-xl border bg-muted/30 text-xs text-muted-foreground max-w-xs">
@@ -332,17 +332,17 @@ export function ParticipantAttendanceQrCard({
             )}
           </div>
         ) : isLockedUntilNoon ? (
-          /* Case 1B: Workshop day, but before 12:00 PM (Locked) */
+          /* Case 1B: Workshop day, but before 12:00 AM (Locked) */
           <div className="flex flex-col items-center justify-center py-8 text-center space-y-5">
             <div className="h-16 w-16 rounded-full bg-primary/10 text-primary flex items-center justify-center shadow-inner">
               <Clock className="h-8 w-8" />
             </div>
             <div className="space-y-1.5 max-w-sm">
               <h3 className="font-display text-2xl font-bold text-foreground">
-                Session Opens at 12:00 PM
+                Session Opens at 12:00 AM
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Today's workshop attendance session ({todayDate}) opens at 12:00 PM.
+                Today's workshop attendance session ({todayDate}) opens at 12:00 AM.
               </p>
             </div>
 
@@ -350,7 +350,7 @@ export function ParticipantAttendanceQrCard({
               hours={unlockHours}
               minutes={unlockMinutes}
               seconds={unlockSeconds}
-              title="Next QR code will generate at 12:00 PM"
+              title="Next QR code will generate at 12:00 AM"
               subtitle="The countdown is active. Your personal attendance QR code will automatically unlock and appear when the timer reaches zero."
             />
 
