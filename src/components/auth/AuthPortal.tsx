@@ -48,10 +48,10 @@ export function AuthPortal({ initialMode = "login", redirectTo, className = "" }
   return (
     <div className={`w-full max-w-md rounded-2xl border bg-card p-6 shadow-xl sm:p-8 ${className}`}>
       {/* Navigation tabs: Sign In | Register | View Details */}
-      <div className="flex rounded-xl border bg-muted/60 p-1 text-xs font-semibold mb-6">
+      <div className="flex rounded-xl border bg-muted/60 p-1 text-[11px] sm:text-xs font-semibold mb-6">
         <button
           type="button"
-          className={`flex-1 py-2 text-center rounded-lg transition-all ${
+          className={`flex-1 py-2 text-center rounded-lg transition-all whitespace-nowrap px-1 ${
             mode === "login"
               ? "bg-card text-foreground shadow-sm font-bold"
               : "text-muted-foreground hover:text-foreground"
@@ -62,7 +62,7 @@ export function AuthPortal({ initialMode = "login", redirectTo, className = "" }
         </button>
         <button
           type="button"
-          className={`flex-1 py-2 text-center rounded-lg transition-all ${
+          className={`flex-1 py-2 text-center rounded-lg transition-all whitespace-nowrap px-1 ${
             mode === "register"
               ? "bg-card text-foreground shadow-sm font-bold"
               : "text-muted-foreground hover:text-foreground"
@@ -73,7 +73,7 @@ export function AuthPortal({ initialMode = "login", redirectTo, className = "" }
         </button>
         <button
           type="button"
-          className={`flex-1 py-2 text-center rounded-lg transition-all ${
+          className={`flex-1 py-2 text-center rounded-lg transition-all whitespace-nowrap px-1 ${
             mode === "lookup"
               ? "bg-card text-foreground shadow-sm font-bold"
               : "text-muted-foreground hover:text-foreground"
@@ -220,7 +220,7 @@ function PhoneLogin({
         {busy ? "Signing in…" : "Sign In"}
       </Button>
 
-      <div className="flex items-center justify-between pt-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs">
         <button
           type="button"
           className="text-primary hover:underline font-medium"
@@ -622,16 +622,16 @@ function PhoneLookupView({
 
       <form onSubmit={handleLookup} className="space-y-3">
         <Field label="Enter Mobile Number">
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Input
               type="tel"
               placeholder="e.g. 9876543210"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               required
-              className="text-base"
+              className="text-base flex-1"
             />
-            <Button type="submit" disabled={busy || !phone.trim()} className="gap-1.5 font-bold">
+            <Button type="submit" disabled={busy || !phone.trim()} className="gap-1.5 font-bold w-full sm:w-auto shrink-0">
               <Search className="h-4 w-4" /> {busy ? "Checking…" : "Lookup"}
             </Button>
           </div>

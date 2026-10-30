@@ -94,7 +94,7 @@ function Index() {
               {/* Key Highlights */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/15">
                 <div className="flex items-start gap-2.5">
-                  <Smartphone className="h-5 w-5 mt-0.5 text-accent opacity-90" />
+                  <Smartphone className="h-5 w-5 mt-0.5 text-accent opacity-90 shrink-0" />
                   <div>
                     <h4 className="font-semibold text-sm">Email & Phone Login</h4>
                     <p className="text-xs opacity-75">Sign in with either identifier seamlessly</p>
@@ -102,7 +102,7 @@ function Index() {
                 </div>
 
                 <div className="flex items-start gap-2.5">
-                  <CheckCircle className="h-5 w-5 mt-0.5 text-accent opacity-90" />
+                  <CheckCircle className="h-5 w-5 mt-0.5 text-accent opacity-90 shrink-0" />
                   <div>
                     <h4 className="font-semibold text-sm">Instant Lookup</h4>
                     <p className="text-xs opacity-75">View details by 10-digit mobile number</p>
@@ -110,7 +110,7 @@ function Index() {
                 </div>
 
                 <div className="flex items-start gap-2.5">
-                  <LockKeyhole className="h-5 w-5 mt-0.5 text-accent opacity-90" />
+                  <LockKeyhole className="h-5 w-5 mt-0.5 text-accent opacity-90 shrink-0" />
                   <div>
                     <h4 className="font-semibold text-sm">Verified Security</h4>
                     <p className="text-xs opacity-75">Admin review and encrypted storage</p>

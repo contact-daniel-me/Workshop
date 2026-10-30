@@ -383,7 +383,7 @@ export function PhotoCaptureInput({
               {(value.size / 1024).toFixed(1)} KB • Validated
             </p>
 
-            <div className="flex items-center gap-2 mt-2">
+            <div className="flex flex-wrap items-center gap-2 mt-2">
               <Button
                 type="button"
                 variant="outline"

@@ -533,30 +533,30 @@ function AdminPage() {
 
       {/* Main Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 h-auto p-1 bg-muted/60">
-          <TabsTrigger value="overview" className="gap-1.5 py-2 text-xs">
+        <TabsList className="flex w-full overflow-x-auto no-scrollbar sm:grid sm:grid-cols-4 lg:grid-cols-7 h-auto p-1 bg-muted/60 gap-1">
+          <TabsTrigger value="overview" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
             <BarChart3 className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
-          <TabsTrigger value="scanner" className="gap-1.5 py-2 text-xs font-bold text-primary">
+          <TabsTrigger value="scanner" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs font-bold text-primary">
             <Camera className="h-3.5 w-3.5 text-primary" /> Scan QR
           </TabsTrigger>
-          <TabsTrigger value="daily" className="gap-1.5 py-2 text-xs">
+          <TabsTrigger value="daily" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
             <Calendar className="h-3.5 w-3.5" /> Daily Attendance
           </TabsTrigger>
-          <TabsTrigger value="qr" className="gap-1.5 py-2 text-xs">
+          <TabsTrigger value="qr" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
             <QrCode className="h-3.5 w-3.5" /> Projector QR
           </TabsTrigger>
-          <TabsTrigger value="participants" className="gap-1.5 py-2 text-xs">
+          <TabsTrigger value="participants" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
             <Users className="h-3.5 w-3.5" /> Participants ({totalRegistered})
           </TabsTrigger>
-          <TabsTrigger value="selfies" className="gap-1.5 py-2 text-xs">
+          <TabsTrigger value="selfies" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
             <ShieldCheck className="h-3.5 w-3.5" /> Verifications {pendingSelfies > 0 && `(${pendingSelfies})`}
           </TabsTrigger>
-          <TabsTrigger value="exports" className="gap-1.5 py-2 text-xs">
+          <TabsTrigger value="exports" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
             <FileSpreadsheet className="h-3.5 w-3.5" /> Reports
           </TabsTrigger>
           {me?.isSuper && (
-            <TabsTrigger value="settings" className="gap-1.5 py-2 text-xs">
+            <TabsTrigger value="settings" className="shrink-0 whitespace-nowrap gap-1.5 py-2 text-xs">
               <SettingsIcon className="h-3.5 w-3.5" /> Settings
             </TabsTrigger>
           )}
@@ -1653,26 +1653,26 @@ function AdminPage() {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="flex items-center gap-4 border-b pb-4">
-              <Avatar className="h-16 w-16">
+            <div className="flex items-center gap-3 sm:gap-4 border-b pb-4">
+              <Avatar className="h-14 w-14 sm:h-16 sm:w-16 shrink-0">
                 <AvatarImage
                   src={photoUrls[adminData?.profiles.find((p) => p.id === selectedParticipant.id)?.photo_path ?? ""]}
                 />
                 <AvatarFallback>{selectedParticipant.full_name.slice(0, 2).toUpperCase()}</AvatarFallback>
               </Avatar>
-              <div className="flex-1">
-                <h3 className="font-display text-lg font-bold">{selectedParticipant.full_name}</h3>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-display text-base sm:text-lg font-bold truncate">{selectedParticipant.full_name}</h3>
                 <p className="font-mono text-xs text-muted-foreground">{selectedParticipant.participant_code}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <Badge variant="outline">{selectedParticipant.email}</Badge>
-                  <Badge variant="outline">{selectedParticipant.phone}</Badge>
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2">
+                  <Badge variant="outline" className="text-[11px] truncate max-w-[200px]">{selectedParticipant.email}</Badge>
+                  <Badge variant="outline" className="text-[11px]">{selectedParticipant.phone}</Badge>
                   <Badge
                     className={
                       selectedParticipant.verification_status === "verified"
-                        ? "bg-success text-success-foreground"
+                        ? "bg-success text-success-foreground text-[10px]"
                         : selectedParticipant.verification_status === "rejected"
-                        ? "bg-destructive text-destructive-foreground"
-                        : "bg-warning text-warning-foreground"
+                        ? "bg-destructive text-destructive-foreground text-[10px]"
+                        : "bg-warning text-warning-foreground text-[10px]"
                     }
                   >
                     {selectedParticipant.verification_status.toUpperCase()}
@@ -1682,15 +1682,15 @@ function AdminPage() {
             </div>
 
             {selectedParticipant.verification_status === "pending" && (
-              <div className="flex gap-3 p-3 bg-warning/10 rounded-xl border border-warning/30 items-center justify-between">
+              <div className="flex flex-col sm:flex-row gap-3 p-3 bg-warning/10 rounded-xl border border-warning/30 items-start sm:items-center justify-between">
                 <div>
                   <p className="font-bold text-xs text-warning-foreground">Verification Pending</p>
                   <p className="text-[11px] text-muted-foreground">Review registration details and approve or reject.</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full sm:w-auto justify-end">
                   <Button
                     size="sm"
-                    className="bg-success hover:bg-success/90 text-white font-bold"
+                    className="flex-1 sm:flex-none bg-success hover:bg-success/90 text-white font-bold"
                     onClick={() => handleVerifyRegistration(selectedParticipant.id, "verified")}
                   >
                     <CheckCircle2 className="h-4 w-4 mr-1" /> Approve
@@ -1698,7 +1698,7 @@ function AdminPage() {
                   <Button
                     size="sm"
                     variant="destructive"
-                    className="font-bold"
+                    className="flex-1 sm:flex-none font-bold"
                     onClick={() => handleVerifyRegistration(selectedParticipant.id, "rejected")}
                   >
                     <XCircle className="h-4 w-4 mr-1" /> Reject
@@ -1708,7 +1708,7 @@ function AdminPage() {
             )}
 
             <div className="space-y-4 pt-2">
-              <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                 <div className="rounded-lg border p-2 bg-muted/20">
                   <span className="text-[10px] text-muted-foreground uppercase font-semibold">Present</span>
                   <p className="text-lg font-bold text-success">{selectedParticipant.summary.present}</p>
@@ -1731,7 +1731,7 @@ function AdminPage() {
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">
                   Workshop Attendance Grid
                 </h4>
-                <div className="grid grid-cols-6 sm:grid-cols-10 gap-1.5">
+                <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
                   {selectedParticipant.summary.states.map((st, idx) => (
                     <div
                       key={st.day}
@@ -1752,15 +1752,14 @@ function AdminPage() {
                 </div>
               </div>
 
-
               {/* Account Management Actions */}
-              <div className="flex items-center justify-between border-t pt-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t pt-4">
                 <span className="text-xs font-semibold text-muted-foreground">Account Actions:</span>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1.5 text-xs text-amber-700 hover:text-amber-800 border-amber-300"
+                    className="flex-1 sm:flex-none gap-1.5 text-xs text-amber-700 hover:text-amber-800 border-amber-300"
                     onClick={() => {
                       setPasswordTargetUser({
                         id: selectedParticipant.id,
@@ -1774,7 +1773,7 @@ function AdminPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1.5 text-xs text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+                    className="flex-1 sm:flex-none gap-1.5 text-xs text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
                     onClick={() => {
                       setDeleteTargetUser({
                         id: selectedParticipant.id,

@@ -123,7 +123,7 @@ function DashboardPage() {
                 {me?.profile?.verification_status ? me.profile.verification_status.toUpperCase() : "PENDING APPROVAL"}
               </Badge>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground flex items-center gap-2">
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground flex flex-wrap items-center gap-1.5 sm:gap-2">
               <span>{settings?.name ?? "Workshop"}</span>
               <span>•</span>
               <span>Start: {settings?.start_date}</span>
@@ -133,14 +133,14 @@ function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {isApproved && (
-            <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="gap-2">
+            <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="gap-2 text-xs sm:text-sm">
               <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Download Report (.xlsx)
             </Button>
           )}
           {me?.isStaff && (
-            <Button asChild size="sm" variant="default" className="gap-2">
+            <Button asChild size="sm" variant="default" className="gap-2 text-xs sm:text-sm">
               <Link to="/admin">
                 <ShieldCheck className="h-4 w-4" /> Admin Portal
               </Link>

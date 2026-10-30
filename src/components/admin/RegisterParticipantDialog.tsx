@@ -358,7 +358,7 @@ export function RegisterParticipantDialog({
 
               {/* Password Section */}
               <div className="rounded-xl border bg-muted/20 p-3.5 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label className="text-xs font-semibold flex items-center gap-1.5">
                     <Key className="h-3.5 w-3.5 text-primary" />
                     Account Password <span className="text-destructive">*</span>
@@ -425,7 +425,7 @@ export function RegisterParticipantDialog({
 
               {/* Profile Photograph Section */}
               <div className="space-y-2">
-                <Label className="text-xs font-semibold flex items-center justify-between">
+                <Label className="text-xs font-semibold flex flex-wrap items-center justify-between gap-1">
                   <span>
                     Profile Photograph (Front-facing) <span className="text-destructive">*</span>
                   </span>
@@ -631,7 +631,7 @@ export function RegisterParticipantDialog({
                 </div>
 
                 <div className="sm:col-span-2 rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-1">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[10px] text-primary uppercase font-bold tracking-wider">
                       Temporary Password
                     </span>
@@ -639,7 +639,7 @@ export function RegisterParticipantDialog({
                       One-Time Display
                     </Badge>
                   </div>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <code className="font-mono text-sm font-bold text-foreground tracking-wide select-all">
                       {createdParticipant.rawPassword}
                     </code>
