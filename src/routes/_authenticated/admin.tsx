@@ -331,13 +331,17 @@ function AdminPage() {
 
   // Daily Attendance Filtered Rows for Selected Date (Requirement 7)
   const dailyAttendanceStats = useMemo(() => {
-    if (!adminData) return { presentCount: 0, notMarkedCount: 0, totalApproved: 0, rate: 0, rows: [] };
+    if (!adminData) return { presentCount: 0, notMarkedCount: 0, totalApproved: 0, qrCount: 0, faceCount: 0, manualCount: 0, rate: 0, rows: [] };
 
     const approvedProfiles = adminData.profiles.filter((p) => p.verification_status === "verified");
     const attOnDate = adminData.attendance.filter((a) => a.day_date === dailyDate);
     const attByUserId = new Map(attOnDate.map((a) => [a.user_id, a]));
 
     const presentCount = attOnDate.filter((a) => a.status === "present").length;
+    const qrCount = attOnDate.filter((a) => a.status === "present" && (a.method === "qr" || a.method === "qr_scan")).length;
+    const faceCount = attOnDate.filter((a) => a.status === "present" && (a.method === "qr_selfie" || a.method === "face" || a.method === "face_verification")).length;
+    const manualCount = attOnDate.filter((a) => a.status === "present" && a.method === "manual").length;
+
     const totalApproved = approvedProfiles.length;
     const notMarkedCount = Math.max(0, totalApproved - presentCount);
     const rate = totalApproved ? Math.round((presentCount / totalApproved) * 100) : 0;
@@ -360,9 +364,16 @@ function AdminPage() {
           r.profile.phone.includes(q) ||
           r.profile.participant_code.toLowerCase().includes(q);
 
+        const isQr = r.attendance?.status === "present" && (r.attendance?.method === "qr" || r.attendance?.method === "qr_scan");
+        const isFace = r.attendance?.status === "present" && (r.attendance?.method === "qr_selfie" || r.attendance?.method === "face" || r.attendance?.method === "face_verification");
+        const isManual = r.attendance?.status === "present" && r.attendance?.method === "manual";
+
         const matchesStatus =
           dailyStatusFilter === "all" ||
           (dailyStatusFilter === "present" && r.status === "present") ||
+          (dailyStatusFilter === "qr" && isQr) ||
+          (dailyStatusFilter === "face" && isFace) ||
+          (dailyStatusFilter === "manual" && isManual) ||
           (dailyStatusFilter === "not_marked" && r.status === "not_marked") ||
           (dailyStatusFilter === "pending" && r.status === "pending");
 
@@ -373,6 +384,9 @@ function AdminPage() {
       presentCount,
       notMarkedCount,
       totalApproved,
+      qrCount,
+      faceCount,
+      manualCount,
       rate,
       rows,
     };
@@ -572,7 +586,7 @@ function AdminPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="overview">📊 Overview & Analytics</SelectItem>
-              <SelectItem value="scanner">📷 Scan QR Code</SelectItem>
+              <SelectItem value="scanner">🛡️ Attendance Verification Console</SelectItem>
               <SelectItem value="daily">📅 Daily Attendance</SelectItem>
               <SelectItem value="qr">📺 Projector QR</SelectItem>
               <SelectItem value="participants">👥 Participants ({totalRegistered})</SelectItem>
@@ -589,7 +603,7 @@ function AdminPage() {
             <BarChart3 className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
           <TabsTrigger value="scanner" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-bold text-primary">
-            <Camera className="h-3.5 w-3.5 text-primary" /> Scan QR
+            <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Verification Console
           </TabsTrigger>
           <TabsTrigger value="daily" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <Calendar className="h-3.5 w-3.5" /> Daily Attendance
@@ -757,11 +771,12 @@ function AdminPage() {
           </div>
         </TabsContent>
 
-        {/* TAB: SCAN QR ATTENDANCE (Camera & Manual Scanner) */}
+        {/* TAB: ATTENDANCE VERIFICATION CONSOLE (QR & Face Recognition) */}
         <TabsContent value="scanner" className="space-y-6">
           <AdminQrScannerTab
             workshopName={settings?.name}
             onAttendanceConfirmed={() => void refetch()}
+            approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
           />
         </TabsContent>
 
@@ -822,55 +837,58 @@ function AdminPage() {
                 </div>
                 <Select value={dailyStatusFilter} onValueChange={setDailyStatusFilter}>
                   <SelectTrigger className="text-xs">
-                    <SelectValue placeholder="Attendance Status" />
+                    <SelectValue placeholder="Attendance Status & Method" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Attendees</SelectItem>
-                    <SelectItem value="present">Present ({dailyAttendanceStats.presentCount})</SelectItem>
-                    <SelectItem value="not_marked">Not Yet Marked ({dailyAttendanceStats.notMarkedCount})</SelectItem>
-                    <SelectItem value="pending">Pending Review</SelectItem>
+                    <SelectItem value="all">All Eligible Attendees ({dailyAttendanceStats.totalApproved})</SelectItem>
+                    <SelectItem value="present">All Present ({dailyAttendanceStats.presentCount})</SelectItem>
+                    <SelectItem value="qr">📷 QR Verified ({dailyAttendanceStats.qrCount})</SelectItem>
+                    <SelectItem value="face">👤 Face Verified ({dailyAttendanceStats.faceCount})</SelectItem>
+                    <SelectItem value="manual">✍️ Manually Marked ({dailyAttendanceStats.manualCount})</SelectItem>
+                    <SelectItem value="not_marked">⏳ Absent / Not Yet Marked ({dailyAttendanceStats.notMarkedCount})</SelectItem>
+                    <SelectItem value="pending">⚠️ Pending Review</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </CardHeader>
           </Card>
 
-          {/* 4 KPI Cards for the Selected Session Date */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="shadow-sm">
+          {/* Daily Statistics Cards (Requirement 7) */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="shadow-sm border">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Approved Participants</CardTitle>
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Eligible Participants</CardTitle>
                 <Users className="h-4 w-4 text-primary" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-display">{dailyAttendanceStats.totalApproved}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Eligible for attendance</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Approved for session</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
+            <Card className="shadow-sm border">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Present Count</CardTitle>
-                <CheckCircle2 className="h-4 w-4 text-success" />
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Total Present</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-display text-success">{dailyAttendanceStats.presentCount}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Recorded on {dailyDate}</p>
+                <div className="text-2xl font-bold font-display text-emerald-600">{dailyAttendanceStats.presentCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-1">{dailyAttendanceStats.rate}% attendance rate</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
+            <Card className="shadow-sm border">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Not Yet Marked</CardTitle>
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Total Absent</CardTitle>
                 <Clock className="h-4 w-4 text-warning" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-display text-warning">{dailyAttendanceStats.notMarkedCount}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Attendees still pending</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Not checked in</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
+            <Card className="shadow-sm border">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Attendance Percentage</CardTitle>
                 <TrendingUp className="h-4 w-4 text-primary" />
@@ -878,6 +896,51 @@ function AdminPage() {
               <CardContent>
                 <div className="text-2xl font-bold font-display">{dailyAttendanceStats.rate}%</div>
                 <p className="text-[11px] text-muted-foreground mt-1">Of approved attendees</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Verification Method Breakdown Chips (Requirement 7) */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Card className="shadow-xs border border-primary/20 bg-primary/5">
+              <CardContent className="p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-primary" /> QR-Based Attendance
+                  </span>
+                  <p className="text-xl font-bold font-display text-primary mt-1">{dailyAttendanceStats.qrCount}</p>
+                </div>
+                <Badge variant="outline" className="text-[11px] font-mono border-primary/30">
+                  {dailyAttendanceStats.presentCount ? Math.round((dailyAttendanceStats.qrCount / dailyAttendanceStats.presentCount) * 100) : 0}% of present
+                </Badge>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-xs border border-purple-500/20 bg-purple-500/5">
+              <CardContent className="p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1.5">
+                    <ScanLine className="h-3.5 w-3.5 text-purple-600" /> Face-Based Attendance
+                  </span>
+                  <p className="text-xl font-bold font-display text-purple-700 mt-1">{dailyAttendanceStats.faceCount}</p>
+                </div>
+                <Badge variant="outline" className="text-[11px] font-mono border-purple-300 text-purple-700">
+                  {dailyAttendanceStats.presentCount ? Math.round((dailyAttendanceStats.faceCount / dailyAttendanceStats.presentCount) * 100) : 0}% of present
+                </Badge>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-xs border border-amber-500/20 bg-amber-500/5">
+              <CardContent className="p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1.5">
+                    <Edit className="h-3.5 w-3.5 text-amber-600" /> Manually Marked
+                  </span>
+                  <p className="text-xl font-bold font-display text-amber-700 mt-1">{dailyAttendanceStats.manualCount}</p>
+                </div>
+                <Badge variant="outline" className="text-[11px] font-mono border-amber-300 text-amber-700">
+                  {dailyAttendanceStats.presentCount ? Math.round((dailyAttendanceStats.manualCount / dailyAttendanceStats.presentCount) * 100) : 0}% of present
+                </Badge>
               </CardContent>
             </Card>
           </div>
@@ -948,8 +1011,23 @@ function AdminPage() {
                             </td>
                             <td className="py-3 px-4">
                               {att?.method ? (
-                                <Badge variant="outline" className="text-[10px] uppercase font-mono bg-muted/30">
-                                  {att.method === "qr" || att.method === "qr_scan" ? "QR Scan" : att.method === "manual" ? "Manual Override" : att.method}
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] uppercase font-mono ${
+                                    att.method === "qr_selfie" || att.method === "face"
+                                      ? "bg-purple-500/10 text-purple-700 border-purple-200"
+                                      : att.method === "qr" || att.method === "qr_scan"
+                                      ? "bg-emerald-500/10 text-emerald-700 border-emerald-200"
+                                      : "bg-amber-500/10 text-amber-700 border-amber-200"
+                                  }`}
+                                >
+                                  {att.method === "qr_selfie" || att.method === "face"
+                                    ? "👤 Face Verified"
+                                    : att.method === "qr" || att.method === "qr_scan"
+                                    ? "📷 QR Scan"
+                                    : att.method === "manual"
+                                    ? "✍️ Manual"
+                                    : att.method}
                                 </Badge>
                               ) : (
                                 <span className="text-xs text-muted-foreground">—</span>
@@ -2033,10 +2111,12 @@ function AdminPage() {
                 <div className="p-2.5 rounded-lg border bg-card space-y-1">
                   <span className="text-muted-foreground">Method:</span>
                   <p className="font-semibold">
-                    {viewingRecord.attendance?.method === "qr" || viewingRecord.attendance?.method === "qr_scan"
-                      ? "QR Scan"
+                    {viewingRecord.attendance?.method === "qr_selfie" || viewingRecord.attendance?.method === "face"
+                      ? "👤 Face Recognition (Biometric Verified)"
+                      : viewingRecord.attendance?.method === "qr" || viewingRecord.attendance?.method === "qr_scan"
+                      ? "📷 QR Scan"
                       : viewingRecord.attendance?.method === "manual"
-                      ? "Authorized Manual Override"
+                      ? "✍️ Authorized Manual Override"
                       : viewingRecord.attendance?.method || "—"}
                   </p>
                 </div>

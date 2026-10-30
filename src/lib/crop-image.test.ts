@@ -42,3 +42,4 @@ describe("Crop Image Calculations", () => {
     expect(file.size).toBe(mockBlob.size);
   });
 });
+

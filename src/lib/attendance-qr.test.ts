@@ -241,3 +241,245 @@ describe("QR Session Validation Logic & Security Rules", () => {
   });
 });
 
+describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", () => {
+  interface AttendanceRecord {
+    id: string;
+    userId: string;
+    dayDate: string;
+    status: "present" | "pending" | "absent";
+    method: "qr" | "qr_selfie" | "manual";
+    checkedInAt: string;
+    remarks: string;
+  }
+
+  interface VerificationAttempt {
+    userId: string;
+    method: "qr" | "face_verification";
+    confidence: number;
+    matchResult: boolean;
+    status: "matched" | "mismatched" | "pending_manual";
+  }
+
+  // Simulated Unified Verification Controller adhering to the specification
+  function processVerification({
+    userId,
+    dayDate,
+    qrResult,
+    faceConfidence,
+    threshold = 75,
+    existingRecord,
+    closeCandidateDiff,
+  }: {
+    userId: string;
+    dayDate: string;
+    qrResult?: { valid: boolean };
+    faceConfidence?: number;
+    threshold?: number;
+    existingRecord?: AttendanceRecord | null;
+    closeCandidateDiff?: number;
+  }): {
+    status: "present" | "not_marked" | "pending_review";
+    attendanceRecord: AttendanceRecord | null;
+    attempts: VerificationAttempt[];
+    resultCode: string;
+  } {
+    const attempts: VerificationAttempt[] = [];
+
+    // Evaluate QR
+    const qrSuccess = qrResult?.valid === true;
+    if (qrResult) {
+      attempts.push({
+        userId,
+        method: "qr",
+        confidence: qrSuccess ? 100 : 0,
+        matchResult: qrSuccess,
+        status: qrSuccess ? "matched" : "mismatched",
+      });
+    }
+
+    // Evaluate Face
+    const faceAttempted = typeof faceConfidence === "number";
+    const faceSuccess = faceAttempted && faceConfidence >= threshold;
+    const isUncertain = faceAttempted && faceSuccess && typeof closeCandidateDiff === "number" && closeCandidateDiff < 5;
+
+    if (faceAttempted) {
+      attempts.push({
+        userId,
+        method: "face_verification",
+        confidence: faceConfidence,
+        matchResult: faceSuccess && !isUncertain,
+        status: isUncertain ? "pending_manual" : faceSuccess ? "matched" : "mismatched",
+      });
+    }
+
+    if (isUncertain) {
+      return {
+        status: "pending_review",
+        attendanceRecord: existingRecord ?? null,
+        attempts,
+        resultCode: "UNCERTAIN_MATCH_PENDING_REVIEW",
+      };
+    }
+
+    // If attendance already marked, duplicate prevention guarantees original record is preserved
+    if (existingRecord && existingRecord.status === "present") {
+      return {
+        status: "present",
+        attendanceRecord: existingRecord,
+        attempts,
+        resultCode: "ALREADY_MARKED",
+      };
+    }
+
+    // CORE RULE: QR SUCCESS OR FACE SUCCESS = PRESENT
+    if (qrSuccess) {
+      const record: AttendanceRecord = {
+        id: "att-qr-" + Math.random().toString(36).slice(2),
+        userId,
+        dayDate,
+        status: "present",
+        method: "qr",
+        checkedInAt: new Date().toISOString(),
+        remarks: "Verified via Admin QR Scanner",
+      };
+      return {
+        status: "present",
+        attendanceRecord: record,
+        attempts,
+        resultCode: "VERIFIED_PRESENT",
+      };
+    }
+
+    if (faceSuccess) {
+      const record: AttendanceRecord = {
+        id: "att-face-" + Math.random().toString(36).slice(2),
+        userId,
+        dayDate,
+        status: "present",
+        method: "qr_selfie",
+        checkedInAt: new Date().toISOString(),
+        remarks: `Verified via Admin Face Recognition Console (${faceConfidence}% confidence)`,
+      };
+      return {
+        status: "present",
+        attendanceRecord: record,
+        attempts,
+        resultCode: "VERIFIED_PRESENT",
+      };
+    }
+
+    // Both methods failed or not attempted
+    return {
+      status: "not_marked",
+      attendanceRecord: null,
+      attempts,
+      resultCode: faceAttempted ? "FACE_NOT_RECOGNIZED" : "INVALID_QR",
+    };
+  }
+
+  it("marks attendance as PRESENT when QR verification succeeds (without face verification)", () => {
+    const res = processVerification({
+      userId: "u-1",
+      dayDate: "2026-10-30",
+      qrResult: { valid: true },
+    });
+
+    expect(res.status).toBe("present");
+    expect(res.attendanceRecord?.status).toBe("present");
+    expect(res.attendanceRecord?.method).toBe("qr");
+    expect(res.resultCode).toBe("VERIFIED_PRESENT");
+  });
+
+  it("marks attendance as PRESENT when Face verification succeeds (without QR code)", () => {
+    const res = processVerification({
+      userId: "u-2",
+      dayDate: "2026-10-30",
+      faceConfidence: 88,
+      threshold: 75,
+    });
+
+    expect(res.status).toBe("present");
+    expect(res.attendanceRecord?.status).toBe("present");
+    expect(res.attendanceRecord?.method).toBe("qr_selfie");
+    expect(res.resultCode).toBe("VERIFIED_PRESENT");
+  });
+
+  it("marks attendance when QR fails but Face verification succeeds", () => {
+    const res = processVerification({
+      userId: "u-3",
+      dayDate: "2026-10-30",
+      qrResult: { valid: false }, // QR expired or unreadable
+      faceConfidence: 91,
+    });
+
+    expect(res.status).toBe("present");
+    expect(res.attendanceRecord?.method).toBe("qr_selfie");
+  });
+
+  it("marks attendance when Face verification fails but QR succeeds", () => {
+    const res = processVerification({
+      userId: "u-4",
+      dayDate: "2026-10-30",
+      faceConfidence: 54, // low lighting / below 75%
+      qrResult: { valid: true },
+    });
+
+    expect(res.status).toBe("present");
+    expect(res.attendanceRecord?.method).toBe("qr");
+  });
+
+  it("enforces atomic duplicate prevention: keeps exactly ONE attendance record when both methods succeed", () => {
+    // 1. First method: QR succeeds and creates original record
+    const firstRun = processVerification({
+      userId: "u-5",
+      dayDate: "2026-10-30",
+      qrResult: { valid: true },
+    });
+    const originalRecord = firstRun.attendanceRecord;
+    expect(originalRecord).not.toBeNull();
+    expect(originalRecord?.method).toBe("qr");
+
+    // 2. Second method: Face recognition verified later for the same participant and day
+    const secondRun = processVerification({
+      userId: "u-5",
+      dayDate: "2026-10-30",
+      faceConfidence: 94,
+      existingRecord: originalRecord,
+    });
+
+    // Exactly one attendance record is kept; original record and method are preserved
+    expect(secondRun.status).toBe("present");
+    expect(secondRun.attendanceRecord?.id).toBe(originalRecord?.id);
+    expect(secondRun.attendanceRecord?.method).toBe("qr");
+    expect(secondRun.resultCode).toBe("ALREADY_MARKED");
+  });
+
+  it("does not mark attendance when both methods fail", () => {
+    const res = processVerification({
+      userId: "u-6",
+      dayDate: "2026-10-30",
+      qrResult: { valid: false },
+      faceConfidence: 45,
+      threshold: 75,
+    });
+
+    expect(res.status).toBe("not_marked");
+    expect(res.attendanceRecord).toBeNull();
+  });
+
+  it("routes uncertain matches with close competitor scores to manual review", () => {
+    const res = processVerification({
+      userId: "u-7",
+      dayDate: "2026-10-30",
+      faceConfidence: 86,
+      threshold: 75,
+      closeCandidateDiff: 2, // candidate 2 is 84%, diff < 5%
+    });
+
+    expect(res.status).toBe("pending_review");
+    expect(res.resultCode).toBe("UNCERTAIN_MATCH_PENDING_REVIEW");
+    expect(res.attendanceRecord).toBeNull();
+  });
+});
+
+

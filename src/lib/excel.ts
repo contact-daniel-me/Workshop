@@ -216,8 +216,15 @@ export async function generateDailyReportWorkbook(
       date,
       status: r.status.toUpperCase(),
       time: r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : "-",
-      method: r.method,
-      verified_by: safeCell(r.verified_by ?? "System (QR)"),
+      method:
+        r.method === "qr_selfie" || r.method === "face"
+          ? "Face Verified"
+          : r.method === "qr" || r.method === "qr_scan"
+          ? "QR Scan"
+          : r.method === "manual"
+          ? "Manual Override"
+          : r.method,
+      verified_by: safeCell(r.verified_by ?? "System"),
       remarks: safeCell(r.remarks ?? ""),
     });
     applyBodyStyle(row);

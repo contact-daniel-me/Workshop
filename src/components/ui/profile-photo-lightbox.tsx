@@ -142,16 +142,16 @@ export function ProfilePhotoLightbox({
 }
 
 export interface ClickableAvatarProps {
-  src?: string | null;
-  alt?: string;
-  fallback?: string;
-  className?: string;
-  imageClassName?: string;
-  fallbackClassName?: string;
-  fullName?: string;
-  participantCode?: string;
-  verificationStatus?: string;
-  disabled?: boolean;
+  src?: string | null | undefined;
+  alt?: string | undefined;
+  fallback?: string | undefined;
+  className?: string | undefined;
+  imageClassName?: string | undefined;
+  fallbackClassName?: string | undefined;
+  fullName?: string | undefined;
+  participantCode?: string | undefined;
+  verificationStatus?: string | undefined;
+  disabled?: boolean | undefined;
 }
 
 /**
@@ -241,3 +241,4 @@ export function ClickableAvatar({
     </>
   );
 }
+

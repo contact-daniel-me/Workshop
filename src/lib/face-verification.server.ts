@@ -23,7 +23,7 @@ export interface VerificationOptions {
 /**
  * Downloads and decrypts an image buffer from a private Supabase Storage bucket
  */
-async function fetchStorageImage(
+export async function fetchStorageImage(
   supabase: SupabaseClient<Database>,
   bucket: string,
   path: string,
@@ -41,7 +41,7 @@ async function fetchStorageImage(
  * Analyzes image feature gradients, luminance variance, and structural similarity (SSIM-inspired)
  * between the registration portrait and the live check-in selfie.
  */
-function computeVisualFeatureSimilarity(buf1: Buffer, buf2: Buffer): number {
+export function computeVisualFeatureSimilarity(buf1: Buffer, buf2: Buffer): number {
   if (buf1.length === 0 || buf2.length === 0) return 0;
 
   // 1. Sample pixel luminance distribution across image blocks

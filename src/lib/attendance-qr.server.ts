@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { todayLocal, workshopDays } from "./attendance";
+import { computeVisualFeatureSimilarity, fetchStorageImage } from "./face-verification.server";
 
 export interface ParticipantQrResponse {
   ok: boolean;
@@ -666,4 +667,487 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
       },
     };
   });
+
+export type FaceVerificationResultCode =
+  | "VERIFIED_PRESENT"
+  | "ALREADY_MARKED"
+  | "FACE_NOT_RECOGNIZED"
+  | "UNCERTAIN_MATCH_PENDING_REVIEW"
+  | "NO_SESSION_SCHEDULED"
+  | "PARTICIPANT_NOT_APPROVED"
+  | "NO_REFERENCE_PHOTO"
+  | "NO_ELIGIBLE_PARTICIPANTS"
+  | "INVALID_IMAGE"
+  | "UNAUTHORIZED"
+  | "ERROR";
+
+export interface AdminFaceVerificationResult {
+  ok: boolean;
+  resultCode: FaceVerificationResultCode;
+  message: string;
+  confidence?: number;
+  threshold?: number;
+  participant?: {
+    id: string;
+    fullName: string;
+    participantCode: string;
+    email: string;
+    phone: string;
+    photoUrl?: string | null;
+    verificationStatus: string;
+  };
+  attendance?: {
+    id: string;
+    status: string;
+    checkedInAt: string;
+    dayDate: string;
+    method: string;
+    remarks?: string | null;
+  };
+  candidates?: Array<{
+    id: string;
+    fullName: string;
+    participantCode: string;
+    score: number;
+  }>;
+}
+
+/**
+ * 4. Admin Server Function: adminVerifyFaceAttendance
+ * Verifies participant identity biometrically from live camera capture (1-to-1 or 1-to-N),
+ * and marks attendance automatically when verification succeeds.
+ * Enforces atomic duplicate prevention: QR or Face = Present (exactly one record).
+ */
+export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: { imageBase64: string; participantId?: string }) => {
+    return {
+      imageBase64: String(input.imageBase64 ?? "").trim(),
+      participantId: input.participantId ? String(input.participantId).trim() : undefined,
+    };
+  })
+  .handler(async ({ data: input, context }): Promise<AdminFaceVerificationResult> => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1. Authorization check: Administrator staff only
+    const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+    if (!isStaff) {
+      return {
+        ok: false,
+        resultCode: "UNAUTHORIZED",
+        message: "Only authorized administrators can access the face verification console.",
+      };
+    }
+
+    // 2. Validate live capture image payload
+    const { imageBase64, participantId } = input;
+    if (!imageBase64) {
+      return {
+        ok: false,
+        resultCode: "INVALID_IMAGE",
+        message: "No live photo capture received.",
+      };
+    }
+
+    const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z+]+;base64,/, "").trim();
+    let liveBuffer: Buffer;
+    try {
+      liveBuffer = Buffer.from(cleanBase64, "base64");
+      if (liveBuffer.length < 300) {
+        return {
+          ok: false,
+          resultCode: "INVALID_IMAGE",
+          message: "Captured image data is too small or corrupt.",
+        };
+      }
+    } catch {
+      return {
+        ok: false,
+        resultCode: "INVALID_IMAGE",
+        message: "Invalid image encoding received.",
+      };
+    }
+
+    // 3. Workshop schedule check for today
+    const today = todayLocal();
+    const nowIso = new Date().toISOString();
+    const { data: settings } = await supabaseAdmin
+      .from("workshop_settings")
+      .select("*")
+      .maybeSingle();
+
+    if (!settings || !workshopDays(settings).includes(today)) {
+      return {
+        ok: false,
+        resultCode: "NO_SESSION_SCHEDULED",
+        message: `No workshop session is scheduled for today (${today}).`,
+      };
+    }
+
+    // Calibrated verification threshold
+    const envThreshold = Number(process.env.FACE_VERIFICATION_CONFIDENCE_THRESHOLD);
+    const threshold = Number.isFinite(envThreshold) && envThreshold > 0 ? envThreshold : 75;
+
+    // Helper to generate signed photo URL
+    const getPhotoUrl = async (photoPath: string | null): Promise<string | null> => {
+      if (!photoPath) return null;
+      try {
+        const { data: signRes } = await supabaseAdmin.storage.from("photos").createSignedUrl(photoPath, 3600);
+        return signRes?.signedUrl ?? null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Helper to mark attendance atomically or return existing record
+    const recordFaceAttendance = async (
+      matchedProfile: {
+        id: string;
+        full_name: string;
+        participant_code: string;
+        email: string;
+        phone: string;
+        photo_path: string | null;
+        verification_status: string;
+      },
+      confidence: number,
+    ): Promise<AdminFaceVerificationResult> => {
+      // Check existing attendance record
+      const { data: existing } = await supabaseAdmin
+        .from("attendance")
+        .select("id, status, checked_in_at, method, remarks")
+        .eq("user_id", matchedProfile.id)
+        .eq("day_date", today)
+        .maybeSingle();
+
+      const photoUrl = await getPhotoUrl(matchedProfile.photo_path);
+
+      if (existing) {
+        // Attendance was already marked (e.g. by QR or earlier face verification)
+        // Record second verification attempt in audit log without modifying original record
+        try {
+          await supabaseAdmin.from("audit_logs").insert({
+            actor_id: userId,
+            target_user: matchedProfile.id,
+            action: "face_verification_redundant_check",
+            details: {
+              existingMethod: existing.method,
+              confidence,
+              dayDate: today,
+            } as never,
+          });
+        } catch {
+          // ignore audit logging error
+        }
+
+        return {
+          ok: true,
+          resultCode: "ALREADY_MARKED",
+          message: `Attendance is already marked as ${existing.status.toUpperCase()} (${existing.method === "qr" || existing.method === "qr_scan" ? "QR Verified" : existing.method === "qr_selfie" ? "Face Verified" : "Manually Marked"}) at ${new Date(existing.checked_in_at).toLocaleTimeString()}.`,
+          confidence,
+          threshold,
+          participant: {
+            id: matchedProfile.id,
+            fullName: matchedProfile.full_name,
+            participantCode: matchedProfile.participant_code,
+            email: matchedProfile.email,
+            phone: matchedProfile.phone,
+            photoUrl,
+            verificationStatus: matchedProfile.verification_status,
+          },
+          attendance: {
+            id: existing.id,
+            status: existing.status,
+            checkedInAt: existing.checked_in_at,
+            dayDate: today,
+            method: existing.method,
+            remarks: existing.remarks,
+          },
+        };
+      }
+
+      // Insert new attendance atomically using qr_selfie enum
+      const { data: newAtt, error: attErr } = await supabaseAdmin
+        .from("attendance")
+        .insert({
+          user_id: matchedProfile.id,
+          day_date: today,
+          status: "present",
+          method: "qr_selfie", // The DB enum representing biometric face verification
+          marked_by: userId,
+          remarks: `Verified via Admin Face Recognition Console (${confidence}% confidence)`,
+          checked_in_at: nowIso,
+        })
+        .select()
+        .single();
+
+      if (attErr) {
+        if (attErr.code === "23505") {
+          // Concurrently inserted! Fetch the winner
+          const { data: winner } = await supabaseAdmin
+            .from("attendance")
+            .select("id, status, checked_in_at, method, remarks")
+            .eq("user_id", matchedProfile.id)
+            .eq("day_date", today)
+            .maybeSingle();
+
+          return {
+            ok: true,
+            resultCode: "ALREADY_MARKED",
+            message: "Attendance was just marked concurrently.",
+            confidence,
+            threshold,
+            participant: {
+              id: matchedProfile.id,
+              fullName: matchedProfile.full_name,
+              participantCode: matchedProfile.participant_code,
+              email: matchedProfile.email,
+              phone: matchedProfile.phone,
+              photoUrl,
+              verificationStatus: matchedProfile.verification_status,
+            },
+            attendance: winner
+              ? {
+                  id: winner.id,
+                  status: winner.status,
+                  checkedInAt: winner.checked_in_at,
+                  dayDate: today,
+                  method: winner.method,
+                  remarks: winner.remarks,
+                }
+              : undefined,
+          };
+        }
+
+        console.error("[Face Verification Attendance Insert Error]:", attErr);
+        return {
+          ok: false,
+          resultCode: "ERROR",
+          message: `Failed to record attendance: ${attErr.message}`,
+        };
+      }
+
+      // Record successful verification attempt in audit trail
+      try {
+        await supabaseAdmin.from("verification_attempts").insert({
+          user_id: matchedProfile.id,
+          day_date: today,
+          method: "face_verification",
+          reference_photo_path: matchedProfile.photo_path,
+          confidence,
+          match_result: true,
+          status: "matched",
+          provider: "server_vision",
+          provider_response: {
+            method: "admin_face_recognition",
+            confidence,
+            threshold,
+            verified_by: userId,
+          } as never,
+        });
+
+        await supabaseAdmin.from("audit_logs").insert({
+          actor_id: userId,
+          target_user: matchedProfile.id,
+          action: "attendance_confirmed_face_verification",
+          details: {
+            attendanceId: newAtt.id,
+            confidence,
+            dayDate: today,
+            method: "face_verification",
+          } as never,
+        });
+      } catch (logErr) {
+        console.warn("[Face Verification Log Error]:", logErr);
+      }
+
+      return {
+        ok: true,
+        resultCode: "VERIFIED_PRESENT",
+        message: "Attendance Marked Successfully — Face Verified.",
+        confidence,
+        threshold,
+        participant: {
+          id: matchedProfile.id,
+          fullName: matchedProfile.full_name,
+          participantCode: matchedProfile.participant_code,
+          email: matchedProfile.email,
+          phone: matchedProfile.phone,
+          photoUrl,
+          verificationStatus: matchedProfile.verification_status,
+        },
+        attendance: {
+          id: newAtt.id,
+          status: "present",
+          checkedInAt: nowIso,
+          dayDate: today,
+          method: "qr_selfie",
+          remarks: newAtt.remarks,
+        },
+      };
+    };
+
+    // =========================================================================
+    // CASE A: 1-to-1 Targeted Verification (Specific Participant Provided)
+    // =========================================================================
+    if (participantId) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, full_name, participant_code, email, phone, photo_path, verification_status")
+        .eq("id", participantId)
+        .maybeSingle();
+
+      if (!profile) {
+        return {
+          ok: false,
+          resultCode: "ERROR",
+          message: "Participant profile not found.",
+        };
+      }
+
+      if (profile.verification_status !== "verified") {
+        return {
+          ok: false,
+          resultCode: "PARTICIPANT_NOT_APPROVED",
+          message: `Participant registration is ${profile.verification_status.toUpperCase()}. Only approved participants can have attendance marked.`,
+        };
+      }
+
+      if (!profile.photo_path) {
+        return {
+          ok: false,
+          resultCode: "NO_REFERENCE_PHOTO",
+          message: "Participant does not have an enrolled reference portrait. Please upload a profile photo first.",
+        };
+      }
+
+      // Download reference photo
+      let refBuffer: Buffer;
+      try {
+        refBuffer = await fetchStorageImage(supabaseAdmin, "photos", profile.photo_path);
+      } catch (err) {
+        return {
+          ok: false,
+          resultCode: "ERROR",
+          message: `Could not retrieve enrolled reference photo: ${err instanceof Error ? err.message : "Not found"}`,
+        };
+      }
+
+      // Compare visual features
+      const confidence = computeVisualFeatureSimilarity(refBuffer, liveBuffer);
+
+      if (confidence < threshold) {
+        // Record failed attempt
+        try {
+          await supabaseAdmin.from("verification_attempts").insert({
+            user_id: profile.id,
+            day_date: today,
+            method: "face_verification",
+            reference_photo_path: profile.photo_path,
+            confidence,
+            match_result: false,
+            status: "mismatched",
+            provider: "server_vision",
+            provider_response: { confidence, threshold, error: "Score below threshold" } as never,
+          });
+        } catch {
+          // ignore
+        }
+
+        return {
+          ok: false,
+          resultCode: "FACE_NOT_RECOGNIZED",
+          message: `Face Not Recognized — Confidence score (${confidence}%) was below the required verification threshold (${threshold}%). Try capturing again with good lighting or verify using QR code.`,
+          confidence,
+          threshold,
+        };
+      }
+
+      // Verified! Mark attendance
+      return await recordFaceAttendance(profile, confidence);
+    }
+
+    // =========================================================================
+    // CASE B: 1-to-N Automatic Identification Against Enrolled Participants
+    // =========================================================================
+    const { data: approvedProfiles, error: fetchErr } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, participant_code, email, phone, photo_path, verification_status")
+      .eq("verification_status", "verified")
+      .not("photo_path", "is", null);
+
+    if (fetchErr || !approvedProfiles?.length) {
+      return {
+        ok: false,
+        resultCode: "NO_ELIGIBLE_PARTICIPANTS",
+        message: "No approved participants with registered reference photos found in the system.",
+      };
+    }
+
+    // Evaluate live photo against reference photos
+    const scores: Array<{
+      profile: (typeof approvedProfiles)[number];
+      score: number;
+    }> = [];
+
+    // Compare with all candidate portraits
+    await Promise.all(
+      approvedProfiles.map(async (prof) => {
+        if (!prof.photo_path) return;
+        try {
+          const refBuf = await fetchStorageImage(supabaseAdmin, "photos", prof.photo_path);
+          const score = computeVisualFeatureSimilarity(refBuf, liveBuffer);
+          scores.push({ profile: prof, score });
+        } catch {
+          // Ignore individual photo fetch failure
+        }
+      }),
+    );
+
+    scores.sort((a, b) => b.score - a.score);
+
+    const top = scores[0];
+    const second = scores[1];
+
+    if (!top || top.score < threshold) {
+      return {
+        ok: false,
+        resultCode: "FACE_NOT_RECOGNIZED",
+        message: `Face Not Recognized — Highest participant match was ${top ? `${top.score}%` : "0%"} (required threshold: ${threshold}%). Please retry with clearer framing or scan participant QR code.`,
+        confidence: top?.score ?? 0,
+        threshold,
+      };
+    }
+
+    // Ambiguity guard: If 2 participants match with high confidence within 5% of each other,
+    // flag for manual review instead of falsely auto-selecting.
+    if (second && second.score >= threshold && top.score - second.score < 5) {
+      return {
+        ok: false,
+        resultCode: "UNCERTAIN_MATCH_PENDING_REVIEW",
+        message: `Uncertain Match — Multiple participants (${top.profile.full_name} at ${top.score}% and ${second.profile.full_name} at ${second.score}%) matched closely. Please select the participant manually or verify using QR code scan.`,
+        confidence: top.score,
+        threshold,
+        candidates: [
+          {
+            id: top.profile.id,
+            fullName: top.profile.full_name,
+            participantCode: top.profile.participant_code,
+            score: top.score,
+          },
+          {
+            id: second.profile.id,
+            fullName: second.profile.full_name,
+            participantCode: second.profile.participant_code,
+            score: second.score,
+          },
+        ],
+      };
+    }
+
+    // Clear match! Mark attendance
+    return await recordFaceAttendance(top.profile, top.score);
+  });
+
 

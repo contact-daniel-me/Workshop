@@ -118,3 +118,4 @@ export async function getCroppedImg(
 export function blobToFile(blob: Blob, fileName = "profile_photo.jpg"): File {
   return new File([blob], fileName, { type: blob.type || "image/jpeg" });
 }
+
