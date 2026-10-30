@@ -14,7 +14,7 @@ export const Route = createFileRoute("/auth")({
   }),
   head: () => ({
     meta: [
-      { title: "Sign in or Register — Event Management Portal" },
+      { title: "Event Management Portal" },
       {
         name: "description",
         content: "Email and mobile phone login and registration for Event Management Portal.",

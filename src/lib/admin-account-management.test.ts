@@ -22,12 +22,17 @@ describe("Admin-Managed Password Reset & Account Recovery", () => {
 
   it("validates that temporary password generator generates strong passwords", () => {
     const generateStrongPassword = () => {
-      const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%^&*";
+      const upper = "ABCDEFGHJKMNPQRSTUVWXYZ";
+      const lower = "abcdefghjkmnpqrstuvwxyz";
+      const digits = "23456789";
+      const symbols = "!@#$%^&*";
+      const chars = lower + upper + digits + symbols;
+
       let pwd = "";
-      pwd += "ABCDEFGHJKMNPQRSTUVWXYZ"[Math.floor(Math.random() * 24)];
-      pwd += "abcdefghjkmnpqrstuvwxyz"[Math.floor(Math.random() * 24)];
-      pwd += "23456789"[Math.floor(Math.random() * 8)];
-      pwd += "!@#$%^&*"[Math.floor(Math.random() * 8)];
+      pwd += upper[Math.floor(Math.random() * upper.length)];
+      pwd += lower[Math.floor(Math.random() * lower.length)];
+      pwd += digits[Math.floor(Math.random() * digits.length)];
+      pwd += symbols[Math.floor(Math.random() * symbols.length)];
       for (let i = 0; i < 10; i++) {
         pwd += chars[Math.floor(Math.random() * chars.length)];
       }

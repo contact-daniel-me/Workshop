@@ -22,7 +22,7 @@ export const Route = createFileRoute("/")({
   }),
   head: () => ({
     meta: [
-      { title: "Event Management Portal — Sign In, Register & View Details" },
+      { title: "Event Management Portal" },
       {
         name: "description",
         content: "Event Management Portal: Sign in with mobile number, register participant account, or lookup details.",

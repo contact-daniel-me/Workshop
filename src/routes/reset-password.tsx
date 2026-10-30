@@ -7,9 +7,9 @@ export const Route = createFileRoute("/reset-password")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "Password Recovery — Event Management Portal" },
+      { title: "Event Management Portal" },
       { name: "description", content: "Password recovery instructions." },
-      { property: "og:title", content: "Password Recovery — Event Management Portal" },
+      { property: "og:title", content: "Event Management Portal" },
       { property: "og:description", content: "Password recovery instructions." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

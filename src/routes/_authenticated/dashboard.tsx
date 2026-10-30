@@ -42,6 +42,9 @@ import {
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   ssr: false,
+  head: () => ({
+    meta: [{ title: "Event Management Portal" }],
+  }),
   component: DashboardPage,
 });
 

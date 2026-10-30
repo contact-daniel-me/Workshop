@@ -82,7 +82,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Event Management Portal — Workshop & Event Management" },
+      { title: "Event Management Portal" },
       { name: "description", content: "Secure QR-based attendance tracking and event management." },
       { name: "author", content: "Event Management" },
       { property: "og:title", content: "Event Management Portal" },
