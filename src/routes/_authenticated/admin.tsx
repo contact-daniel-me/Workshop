@@ -59,6 +59,7 @@ import {
   Camera,
   KeyRound,
   Trash2,
+  ScanLine,
 } from "lucide-react";
 import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
