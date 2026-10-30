@@ -19,7 +19,6 @@ import {
   ArrowRight,
   User,
   Phone,
-  Mail,
   Lock,
   Camera,
   RefreshCw,
@@ -733,15 +732,14 @@ function ForgotPassword({ setMode }: { setMode: (m: AuthMode) => void }) {
       <div className="space-y-2">
         <h2 className="font-display text-2xl font-bold text-foreground">Forgot your password?</h2>
         <p className="text-xs text-muted-foreground leading-relaxed text-left sm:text-center">
-          Password recovery is managed by your SmartAttend administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.
+          Password recovery is managed by your administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.
         </p>
       </div>
 
-      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-left space-y-2">
-        <p className="font-semibold text-primary flex items-center gap-1.5">
-          <Mail className="h-4 w-4" /> Workshop Administrator Contact:
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-left space-y-1.5">
+        <p className="font-semibold text-primary">
+          Please contact your workshop administrator.
         </p>
-        <p className="text-foreground font-mono font-medium text-xs">admin@growiota.in</p>
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           Your authorized administrator can securely update your account password directly from the management console.
         </p>

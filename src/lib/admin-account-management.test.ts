@@ -50,13 +50,13 @@ describe("Admin-Managed Password Reset & Account Recovery", () => {
   });
 
   it("instructs users to contact the administrator and does not generate email recovery", () => {
-    const adminContactEmail = "admin@growiota.in";
     const recoveryNotice =
-      "Password recovery is managed by your SmartAttend administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.";
+      "Password recovery is managed by your administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.";
 
-    expect(recoveryNotice).toContain("Password recovery is managed by your SmartAttend administrator");
+    expect(recoveryNotice).toContain("Password recovery is managed by your administrator");
     expect(recoveryNotice).toContain("password-reset emails are not sent");
-    expect(adminContactEmail).toBe("admin@growiota.in");
+    expect(recoveryNotice).not.toContain("admin@growiota.in");
+    expect(recoveryNotice).not.toContain("SmartAttend");
   });
 });
 

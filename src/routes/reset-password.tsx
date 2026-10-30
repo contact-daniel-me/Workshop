@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Lock, Mail, ArrowLeft } from "lucide-react";
+import { Lock, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/reset-password")({
   ssr: false,
@@ -33,15 +33,14 @@ function Reset() {
             Password Recovery
           </h1>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Password recovery is managed by your SmartAttend administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.
+            Password recovery is managed by your administrator. Please contact your workshop administrator to reset your password. For security reasons, password-reset emails are not sent.
           </p>
         </div>
 
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-left space-y-2">
-          <p className="font-semibold text-primary flex items-center gap-1.5">
-            <Mail className="h-4 w-4" /> Workshop Administrator Contact:
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-left space-y-1.5">
+          <p className="font-semibold text-primary">
+            Please contact your workshop administrator.
           </p>
-          <p className="text-foreground font-mono font-medium text-xs">admin@growiota.in</p>
           <p className="text-[11px] text-muted-foreground">
             Contact an authorized administrator to reset your account credentials directly from the management console.
           </p>
