@@ -11,8 +11,12 @@ import {
   AlertCircle,
   X,
   Sparkles,
+  Crop,
+  ZoomIn,
 } from "lucide-react";
 import { validateClientImageFile, optimizeImageFile } from "@/lib/image-validation";
+import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
+import { ProfilePhotoLightbox } from "@/components/ui/profile-photo-lightbox";
 import { toast } from "sonner";
 
 export interface PhotoCaptureInputProps {
@@ -28,13 +32,18 @@ export function PhotoCaptureInput({
   error,
   disabled = false,
 }: PhotoCaptureInputProps) {
-  const [mode, setMode] = useState<"idle" | "camera" | "preview-capture">("idle");
+  const [mode, setMode] = useState<"idle" | "camera">("idle");
   const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // Captured snapshot state
-  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
-  const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
+  // Crop Editor State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropFileName, setCropFileName] = useState("profile_photo.jpg");
+  const [cropSourceMode, setCropSourceMode] = useState<"camera" | "upload" | "recrop">("upload");
+
+  // Lightbox preview of selected photo
+  const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false);
 
   // Selected file preview URL
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
@@ -54,12 +63,12 @@ export function PhotoCaptureInput({
     }
   }, [value]);
 
-  // Clean up captured preview URL
+  // Clean up crop object URL
   useEffect(() => {
     return () => {
-      if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+      if (cropImageSrc) URL.revokeObjectURL(cropImageSrc);
     };
-  }, [capturedUrl]);
+  }, [cropImageSrc]);
 
   // Stop camera tracks cleanly
   const stopCamera = useCallback(() => {
@@ -95,23 +104,18 @@ export function PhotoCaptureInput({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "user",
-          width: { ideal: 640 },
-          height: { ideal: 640 },
+          width: { ideal: 720 },
+          height: { ideal: 720 },
         },
         audio: false,
       });
 
       streamRef.current = stream;
 
-      // Small delay to ensure video element is rendered
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current
-            .play()
-            .catch(() => {
-              // Video auto-play policy error
-            });
+          videoRef.current.play().catch(() => {});
         }
         setCameraLoading(false);
       }, 100);
@@ -128,7 +132,7 @@ export function PhotoCaptureInput({
     }
   };
 
-  // Capture current video frame to canvas & blob
+  // Capture current video frame and immediately open crop editor
   const capturePhoto = () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
@@ -143,7 +147,7 @@ export function PhotoCaptureInput({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // If front camera, mirror image for natural selfie feel
+    // Mirror image for natural selfie feel
     ctx.translate(width, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, width, height);
@@ -153,69 +157,83 @@ export function PhotoCaptureInput({
         if (blob) {
           stopCamera();
           const preview = URL.createObjectURL(blob);
-          setCapturedBlob(blob);
-          setCapturedUrl(preview);
-          setMode("preview-capture");
+          setCropImageSrc(preview);
+          setCropFileName(`selfie_${Date.now()}.jpg`);
+          setCropSourceMode("camera");
+          setCropModalOpen(true);
         }
       },
       "image/jpeg",
-      0.92
+      0.95
     );
-  };
-
-  // Confirm captured photo
-  const handleUseCapturedPhoto = async () => {
-    if (!capturedBlob) return;
-    const filename = `selfie_${Date.now()}.jpg`;
-    const file = new File([capturedBlob], filename, { type: "image/jpeg" });
-
-    try {
-      await validateClientImageFile(file);
-      onChange(file);
-      setMode("idle");
-      setCapturedBlob(null);
-      if (capturedUrl) URL.revokeObjectURL(capturedUrl);
-      setCapturedUrl(null);
-      toast.success("Selfie captured successfully!");
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Invalid photograph.");
-    }
-  };
-
-  // Retake photo
-  const handleRetake = () => {
-    if (capturedUrl) URL.revokeObjectURL(capturedUrl);
-    setCapturedBlob(null);
-    setCapturedUrl(null);
-    startCamera();
   };
 
   // Cancel camera & return to idle
   const handleCancelCamera = () => {
     stopCamera();
-    if (capturedUrl) URL.revokeObjectURL(capturedUrl);
-    setCapturedBlob(null);
-    setCapturedUrl(null);
     setCameraError(null);
     setMode("idle");
   };
 
-  // Handle file picker selection
+  // Handle file picker selection and immediately open crop editor
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      // Auto-compress large phone photos to standard JPEG and validate magic bytes
-      const optimized = await optimizeImageFile(file);
-      await validateClientImageFile(optimized);
-      onChange(optimized);
-      setMode("idle");
-      toast.success("Photograph selected!");
+      if (file.size > 20 * 1024 * 1024) {
+        throw new Error("Selected image exceeds 20 MB. Please select a smaller photo.");
+      }
+      const preview = URL.createObjectURL(file);
+      setCropImageSrc(preview);
+      setCropFileName(file.name);
+      setCropSourceMode("upload");
+      setCropModalOpen(true);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Invalid photograph.");
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  // Confirm crop from the ImageCropDialog
+  const handleCropConfirmed = async (croppedFile: File) => {
+    try {
+      await validateClientImageFile(croppedFile);
+      onChange(croppedFile);
+      setCropModalOpen(false);
+      setMode("idle");
+      toast.success("Photograph cropped and ready!");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Invalid photograph.");
+    } finally {
+      if (cropImageSrc) URL.revokeObjectURL(cropImageSrc);
+      setCropImageSrc(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Cancel crop
+  const handleCropCancelled = () => {
+    setCropModalOpen(false);
+    if (cropImageSrc) URL.revokeObjectURL(cropImageSrc);
+    setCropImageSrc(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (cropSourceMode === "camera") {
+      void startCamera();
+    } else {
+      setMode("idle");
+    }
+  };
+
+  // Allow re-cropping current photo
+  const handleRecrop = () => {
+    if (!value) return;
+    const preview = URL.createObjectURL(value);
+    setCropImageSrc(preview);
+    setCropFileName(value.name || "profile_photo.jpg");
+    setCropSourceMode("recrop");
+    setCropModalOpen(true);
   };
 
   const handleRemovePhoto = () => {
@@ -282,7 +300,7 @@ export function PhotoCaptureInput({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="relative mx-auto w-full max-w-xs aspect-square rounded-xl overflow-hidden bg-black flex items-center justify-center">
+              <div className="relative mx-auto w-full max-w-xs aspect-square rounded-2xl overflow-hidden bg-black flex items-center justify-center border-2 border-primary/30 shadow-md">
                 {cameraLoading && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white bg-black/70 z-10">
                     <RefreshCw className="h-6 w-6 animate-spin text-primary" />
@@ -296,8 +314,8 @@ export function PhotoCaptureInput({
                   muted
                   className="w-full h-full object-cover scale-x-[-1]"
                 />
-                {/* Oval Guide Overlay */}
-                <div className="absolute inset-4 rounded-full border-2 border-white/40 pointer-events-none" />
+                {/* Oval/Square Guide Overlay */}
+                <div className="absolute inset-4 rounded-2xl border-2 border-white/50 pointer-events-none" />
               </div>
 
               <div className="flex justify-center gap-2">
@@ -315,9 +333,9 @@ export function PhotoCaptureInput({
                   size="sm"
                   onClick={capturePhoto}
                   disabled={cameraLoading}
-                  className="gap-1.5 font-bold bg-primary text-primary-foreground"
+                  className="gap-1.5 font-bold bg-primary text-primary-foreground shadow-xs"
                 >
-                  <Camera className="h-4 w-4" /> Capture Photo
+                  <Camera className="h-4 w-4" /> Capture & Crop
                 </Button>
               </div>
             </div>
@@ -325,50 +343,33 @@ export function PhotoCaptureInput({
         </div>
       )}
 
-      {/* 2. Captured Preview Confirmation */}
-      {mode === "preview-capture" && capturedUrl && (
-        <div className="rounded-xl border bg-card p-3 space-y-3 shadow-sm text-center">
-          <span className="text-xs font-semibold block text-primary">
-            Preview Captured Selfie
-          </span>
-          <div className="mx-auto w-36 h-36 rounded-2xl overflow-hidden border-2 border-primary/30 shadow-inner">
-            <img src={capturedUrl} alt="Captured preview" className="w-full h-full object-cover" />
-          </div>
-          <div className="flex justify-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleRetake}
-              className="text-xs gap-1.5"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Retake
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleUseCapturedPhoto}
-              className="text-xs gap-1.5 font-bold"
-            >
-              <Check className="h-3.5 w-3.5" /> Use This Photo
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Selected Photograph Ready State */}
+      {/* 2. Selected Photograph Ready State */}
       {mode === "idle" && value && filePreviewUrl && (
         <div
-          className={`rounded-xl border bg-card p-3.5 flex items-center gap-3.5 shadow-xs transition-all ${
+          className={`rounded-2xl border bg-card p-3.5 flex items-center gap-3.5 shadow-xs transition-all ${
             error ? "border-destructive bg-destructive/5" : "border-border"
           }`}
         >
-          <Avatar className="h-14 w-14 rounded-xl border-2 border-primary/20 shrink-0">
-            <AvatarImage src={filePreviewUrl} alt="Photograph Preview" className="object-cover" />
-            <AvatarFallback className="font-bold text-xs bg-primary/10 text-primary">
-              PIC
-            </AvatarFallback>
-          </Avatar>
+          {/* Clickable Image Preview with Hover Zoom */}
+          <div
+            className="relative group cursor-pointer shrink-0 rounded-2xl overflow-hidden border-2 border-primary/20 shadow-xs"
+            onClick={() => setPreviewLightboxOpen(true)}
+            title="Click to view full-size photo"
+          >
+            <Avatar className="h-20 w-20 rounded-2xl">
+              <AvatarImage
+                src={filePreviewUrl}
+                alt="Photograph Preview"
+                className="object-cover group-hover:scale-105 transition-transform duration-200"
+              />
+              <AvatarFallback className="font-bold text-xs bg-primary/10 text-primary">
+                PIC
+              </AvatarFallback>
+            </Avatar>
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <ZoomIn className="h-5 w-5 text-white" />
+            </div>
+          </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
@@ -376,14 +377,25 @@ export function PhotoCaptureInput({
                 {value.name || "profile_photo.jpg"}
               </p>
               <Badge className="bg-emerald-600 text-white text-[10px] px-1.5 py-0 h-4">
-                Ready
+                Cropped & Ready
               </Badge>
             </div>
             <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
-              {(value.size / 1024).toFixed(1)} KB • Validated
+              {(value.size / 1024).toFixed(1)} KB • Click photo to expand
             </p>
 
-            <div className="flex flex-wrap items-center gap-2 mt-2">
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleRecrop}
+                disabled={disabled}
+                className="h-7 text-xs gap-1 font-semibold"
+                title="Adjust photo crop"
+              >
+                <Crop className="h-3 w-3 text-primary" /> Recrop
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -392,7 +404,7 @@ export function PhotoCaptureInput({
                 disabled={disabled}
                 className="h-7 text-xs gap-1 font-semibold"
               >
-                <Upload className="h-3 w-3" /> Change Photo
+                <Upload className="h-3 w-3" /> Change
               </Button>
               <Button
                 type="button"
@@ -402,7 +414,7 @@ export function PhotoCaptureInput({
                 disabled={disabled}
                 className="h-7 text-xs gap-1 font-semibold text-primary"
               >
-                <Camera className="h-3 w-3" /> Retake Selfie
+                <Camera className="h-3 w-3" /> Retake
               </Button>
               <Button
                 type="button"
@@ -420,10 +432,10 @@ export function PhotoCaptureInput({
         </div>
       )}
 
-      {/* 4. Default Two-Option Upload Component (Take Photo | Upload Photo) */}
+      {/* 3. Default Two-Option Upload Component (Take Photo | Upload Photo) */}
       {mode === "idle" && !value && (
         <div
-          className={`rounded-xl border p-4 text-center transition-all bg-muted/20 ${
+          className={`rounded-2xl border p-4 text-center transition-all bg-muted/20 ${
             error
               ? "border-destructive bg-destructive/5"
               : "border-dashed border-border hover:border-primary/50"
@@ -460,7 +472,7 @@ export function PhotoCaptureInput({
           </div>
 
           <p className="mt-2.5 text-[11px] text-muted-foreground leading-relaxed">
-            Upload a recent, clear, front-facing photograph, or take a selfie using your camera. JPG, PNG, or WEBP; maximum 5 MB.
+            Upload a recent, front-facing photograph or capture a selfie. You can crop, zoom, and rotate before saving. JPG, PNG, or WEBP; maximum 20 MB.
           </p>
         </div>
       )}
@@ -472,7 +484,26 @@ export function PhotoCaptureInput({
           {error}
         </p>
       )}
+
+      {/* Image Crop Dialog Modal */}
+      <ImageCropDialog
+        open={cropModalOpen}
+        imageSrc={cropImageSrc}
+        fileName={cropFileName}
+        onConfirm={handleCropConfirmed}
+        onCancel={handleCropCancelled}
+      />
+
+      {/* Selected Photo Lightbox Preview */}
+      {filePreviewUrl && (
+        <ProfilePhotoLightbox
+          open={previewLightboxOpen}
+          onClose={() => setPreviewLightboxOpen(false)}
+          src={filePreviewUrl}
+          alt={value?.name || "Selected Photograph"}
+          fullName="Selected Profile Photograph"
+        />
+      )}
     </div>
   );
 }
-

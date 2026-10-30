@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import { Trash2, AlertTriangle, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,12 +75,15 @@ export function DeleteParticipantDialog({
         <div className="space-y-4 pt-2">
           {/* Target Participant Verification Card */}
           <div className="flex items-center gap-3 p-3.5 rounded-xl border border-destructive/20 bg-destructive/5">
-            <Avatar className="h-12 w-12 border-2 border-destructive/20 shrink-0">
-              <AvatarImage src={participant.photoUrl ?? undefined} alt={participant.full_name} className="object-cover" />
-              <AvatarFallback className="font-bold text-xs bg-destructive/10 text-destructive">
-                {participant.full_name.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <ClickableAvatar
+              src={participant.photoUrl ?? undefined}
+              alt={participant.full_name}
+              fullName={participant.full_name}
+              participantCode={participant.participant_code}
+              fallback={participant.full_name.slice(0, 2).toUpperCase()}
+              className="h-16 w-16 border-2 border-destructive/20 shrink-0 shadow-xs"
+              fallbackClassName="text-base text-destructive bg-destructive/10"
+            />
             <div className="min-w-0 flex-1">
               <h4 className="font-display font-bold text-sm text-foreground truncate">{participant.full_name}</h4>
               <p className="text-xs font-mono font-semibold text-destructive">{participant.participant_code}</p>

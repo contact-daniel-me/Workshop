@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
+import { PhotoCaptureInput } from "@/components/auth/PhotoCaptureInput";
 import {
   Dialog,
   DialogContent,
@@ -434,70 +436,23 @@ export function RegisterParticipantDialog({
                   </span>
                 </Label>
 
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handlePhotoSelect}
-                  className="hidden"
+                <PhotoCaptureInput
+                  value={photoFile}
+                  onChange={(f) => {
+                    setPhotoFile(f);
+                    if (f) {
+                      setPhotoPreview(URL.createObjectURL(f));
+                      setErrors((prev) => {
+                        const copy = { ...prev };
+                        delete copy.photo;
+                        return copy;
+                      });
+                    } else {
+                      setPhotoPreview(null);
+                    }
+                  }}
+                  error={errors.photo}
                 />
-
-                {!photoPreview ? (
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-                      errors.photo
-                        ? "border-destructive bg-destructive/5 hover:bg-destructive/10"
-                        : "border-muted-foreground/30 hover:border-primary/50 hover:bg-primary/5"
-                    }`}
-                  >
-                    <div className="mx-auto w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-2">
-                      <Upload className="h-5 w-5" />
-                    </div>
-                    <p className="text-sm font-semibold text-foreground">Click to upload participant photograph</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Genuine portrait/selfie for attendance identity verification
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-4 rounded-xl border bg-card p-3.5">
-                    <Avatar className="h-16 w-16 border-2 border-primary/20 shrink-0">
-                      <AvatarImage src={photoPreview} alt="Preview" className="object-cover" />
-                      <AvatarFallback>PIC</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-foreground truncate">
-                        {photoFile?.name ?? "photograph.jpg"}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {photoFile ? `${(photoFile.size / 1024).toFixed(1)} KB` : ""} • Validated genuine image
-                      </p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="h-7 text-xs gap-1"
-                        >
-                          <RefreshCw className="h-3 w-3" /> Replace Photo
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setPhotoFile(null);
-                            setPhotoPreview(null);
-                          }}
-                          className="h-7 text-xs text-destructive hover:text-destructive"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 {errors.photo && <p className="text-[11px] text-destructive">{errors.photo}</p>}
               </div>
 
@@ -583,12 +538,16 @@ export function RegisterParticipantDialog({
             {/* Profile Summary Card */}
             <div className="rounded-xl border bg-card p-4 space-y-3.5 shadow-sm">
               <div className="flex items-center gap-3 border-b pb-3.5">
-                <Avatar className="h-14 w-14 border-2 border-primary/20">
-                  <AvatarImage src={createdParticipant.photoUrl ?? undefined} />
-                  <AvatarFallback className="font-bold text-sm bg-primary/10 text-primary">
-                    {createdParticipant.fullName.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ClickableAvatar
+                  src={createdParticipant.photoUrl ?? undefined}
+                  alt={createdParticipant.fullName}
+                  fullName={createdParticipant.fullName}
+                  participantCode={createdParticipant.participantCode}
+                  verificationStatus={createdParticipant.verificationStatus}
+                  fallback={createdParticipant.fullName.slice(0, 2).toUpperCase()}
+                  className="h-20 w-20 rounded-2xl border-2 border-primary/20 shadow-xs"
+                  fallbackClassName="text-xl font-bold"
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-base text-foreground truncate">

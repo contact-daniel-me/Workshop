@@ -60,7 +60,7 @@ describe("Email and Phone Dual-Identifier Sign-In", () => {
     const res = await appUniversalSignIn("nonexistent.user99999@example.com", "wrongpassword");
     expect(res.data.user).toBeNull();
     expect(res.error?.message).toContain("Invalid email address, mobile number, or password");
-  }, 15000);
+  }, 30000);
 });
 
 describe("Face Verification Engine Logic", () => {

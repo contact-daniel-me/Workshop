@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import {
   CheckCircle2,
   Clock,
@@ -406,12 +407,15 @@ function RegisterForm({
       {existingProfile && (
         <div className="rounded-xl border border-primary/40 bg-primary/5 p-3.5 space-y-2.5">
           <div className="flex items-center gap-3">
-            <Avatar className="h-11 w-11 border">
-              <AvatarImage src={existingProfile.photoUrl ?? undefined} />
-              <AvatarFallback className="font-bold text-xs bg-primary/20 text-primary">
-                {existingProfile.fullName.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <ClickableAvatar
+              src={existingProfile.photoUrl}
+              alt={existingProfile.fullName}
+              fullName={existingProfile.fullName}
+              participantCode={existingProfile.participantCode}
+              fallback={existingProfile.fullName.slice(0, 2).toUpperCase()}
+              className="h-16 w-16 rounded-2xl border-2 border-primary/20 shadow-xs"
+              fallbackClassName="text-base"
+            />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <p className="font-bold text-sm text-foreground truncate">{existingProfile.fullName}</p>
@@ -640,12 +644,16 @@ function PhoneLookupView({
       {result?.found && result.profile && (
         <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
           <div className="flex items-center gap-3.5 border-b pb-4">
-            <Avatar className="h-14 w-14 border-2 border-primary/20">
-              <AvatarImage src={result.profile.photoUrl ?? undefined} />
-              <AvatarFallback className="font-bold text-base bg-primary/10 text-primary">
-                {result.profile.fullName ? result.profile.fullName.slice(0, 2).toUpperCase() : "SA"}
-              </AvatarFallback>
-            </Avatar>
+            <ClickableAvatar
+              src={result.profile.photoUrl}
+              alt={result.profile.fullName}
+              fullName={result.profile.fullName}
+              participantCode={result.profile.participantCode}
+              verificationStatus={result.profile.verificationStatus}
+              fallback={result.profile.fullName ? result.profile.fullName.slice(0, 2).toUpperCase() : "SA"}
+              className="h-20 w-20 rounded-2xl border-2 border-primary/20 shadow-sm"
+              fallbackClassName="text-xl font-bold"
+            />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-bold text-base text-foreground truncate">{result.profile.fullName}</h3>

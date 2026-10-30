@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import {
   CalendarDays,
   QrCode,
@@ -137,20 +138,24 @@ function DashboardPage() {
       {/* Top Welcome Profile Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-4">
-          <div className="relative group shrink-0">
-            <Avatar className="h-16 w-16 border-2 border-primary/20 shadow-sm">
-              <AvatarImage src={photoUrl ?? undefined} alt={me?.profile?.full_name} className="object-cover" />
-              <AvatarFallback className="text-lg font-bold bg-primary/10 text-primary">
-                {me?.profile?.full_name?.slice(0, 2).toUpperCase() ?? "SA"}
-              </AvatarFallback>
-            </Avatar>
+          <div className="relative shrink-0">
+            <ClickableAvatar
+              src={photoUrl}
+              alt={me?.profile?.full_name}
+              fullName={me?.profile?.full_name}
+              participantCode={me?.profile?.participant_code}
+              verificationStatus={me?.profile?.verification_status}
+              fallback={me?.profile?.full_name?.slice(0, 2).toUpperCase() ?? "SA"}
+              className="h-24 w-24 sm:h-28 sm:w-28 rounded-2xl border-2 border-primary/20 shadow-md"
+              fallbackClassName="text-2xl font-display"
+            />
             <button
               type="button"
               onClick={() => setPhotoModalOpen(true)}
-              className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:scale-110 transition-transform"
+              className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-primary z-10"
               title="Upload or change profile photograph"
             >
-              <Camera className="h-3 w-3" />
+              <Camera className="h-4 w-4" />
             </button>
           </div>
           <div>

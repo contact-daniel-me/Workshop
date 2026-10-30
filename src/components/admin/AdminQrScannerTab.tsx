@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import {
   Camera,
   QrCode,
@@ -413,12 +414,15 @@ export function AdminQrScannerTab({ workshopName = "SmartAttend Workshop", onAtt
 
             {/* Confirmed Details Pill */}
             <div className="flex items-center gap-3 bg-card p-3 rounded-xl border shadow-xs max-w-md w-full justify-center">
-              <Avatar className="h-12 w-12 border-2 border-emerald-500/40">
-                <AvatarImage src={confirmedResult.participant?.photoUrl ?? undefined} alt={confirmedResult.participant?.fullName} />
-                <AvatarFallback className="font-bold text-xs bg-primary/10 text-primary">
-                  {confirmedResult.participant?.fullName?.slice(0, 2).toUpperCase() ?? "SA"}
-                </AvatarFallback>
-              </Avatar>
+              <ClickableAvatar
+                src={confirmedResult.participant?.photoUrl ?? undefined}
+                alt={confirmedResult.participant?.fullName}
+                fullName={confirmedResult.participant?.fullName}
+                participantCode={confirmedResult.participant?.participantCode}
+                fallback={confirmedResult.participant?.fullName?.slice(0, 2).toUpperCase() ?? "SA"}
+                className="h-16 w-16 border-2 border-emerald-500/40 shadow-xs"
+                fallbackClassName="text-sm"
+              />
               <div className="text-left">
                 <p className="font-bold text-sm text-foreground">{confirmedResult.participant?.fullName}</p>
                 <p className="text-xs font-mono text-muted-foreground">{confirmedResult.participant?.participantCode}</p>
@@ -489,24 +493,24 @@ export function AdminQrScannerTab({ workshopName = "SmartAttend Workshop", onAtt
                 {/* Profile Photo Display (Authenticated signed URL from private photos bucket) */}
                 <div className="flex flex-col items-center justify-center p-4 rounded-xl border bg-muted/20 space-y-3 text-center">
                   <div className="relative">
-                    <Avatar className="h-28 w-28 rounded-2xl border-4 border-primary/20 shadow-md">
-                      <AvatarImage
-                        src={verificationResult.participant.photoUrl ?? undefined}
-                        alt={verificationResult.participant.fullName}
-                        className="object-cover"
-                      />
-                      <AvatarFallback className="font-bold text-2xl bg-primary/10 text-primary">
-                        {verificationResult.participant.fullName.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                    <ClickableAvatar
+                      src={verificationResult.participant.photoUrl ?? undefined}
+                      alt={verificationResult.participant.fullName}
+                      fullName={verificationResult.participant.fullName}
+                      participantCode={verificationResult.participant.participantCode}
+                      verificationStatus={verificationResult.participant.verificationStatus}
+                      fallback={verificationResult.participant.fullName.slice(0, 2).toUpperCase()}
+                      className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl border-4 border-primary/20 shadow-md"
+                      fallbackClassName="text-2xl"
+                    />
+                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 pointer-events-none">
                       <Badge className="bg-primary text-primary-foreground text-[10px] uppercase font-mono px-2">
                         Official Portrait
                       </Badge>
                     </div>
                   </div>
                   <p className="text-[11px] text-muted-foreground pt-1">
-                    Compare face against registered portrait
+                    Click portrait to view full size
                   </p>
                 </div>
 

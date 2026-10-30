@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import {
   QrCode,
   CheckCircle2,
@@ -241,12 +242,16 @@ export function ParticipantAttendanceQrCard({
             {/* Left side: Participant info card */}
             <div className="flex-1 space-y-4 w-full">
               <div className="flex items-center gap-4 p-4 rounded-xl border bg-card/60 shadow-xs">
-                <Avatar className="h-16 w-16 border-2 border-primary/20 shrink-0">
-                  <AvatarImage src={photoUrl ?? undefined} alt={fullName} className="object-cover" />
-                  <AvatarFallback className="text-lg font-bold bg-primary/10 text-primary">
-                    {fullName.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ClickableAvatar
+                  src={photoUrl}
+                  alt={fullName}
+                  fullName={fullName}
+                  participantCode={participantCode}
+                  verificationStatus={verificationStatus}
+                  fallback={fullName.slice(0, 2).toUpperCase()}
+                  className="h-24 w-24 sm:h-28 sm:w-28 rounded-2xl border-2 border-primary/20 shrink-0 shadow-sm"
+                  fallbackClassName="text-2xl font-bold"
+                />
                 <div className="min-w-0 flex-1">
                   <h4 className="font-display text-lg font-bold text-foreground truncate">{fullName}</h4>
                   <p className="text-xs font-mono font-semibold text-primary">{participantCode}</p>

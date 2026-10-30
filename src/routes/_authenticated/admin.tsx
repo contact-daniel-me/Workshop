@@ -31,6 +31,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ClickableAvatar, ProfilePhotoLightbox } from "@/components/ui/profile-photo-lightbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusPill } from "@/components/app/status";
@@ -919,12 +920,16 @@ function AdminPage() {
                           <tr key={prof.id} className="hover:bg-muted/20">
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-3">
-                                <Avatar className="h-9 w-9 border">
-                                  <AvatarImage src={photoUrl} alt={prof.full_name} className="object-cover" />
-                                  <AvatarFallback className="font-bold text-xs bg-primary/10 text-primary">
-                                    {prof.full_name.slice(0, 2).toUpperCase()}
-                                  </AvatarFallback>
-                                </Avatar>
+                                <ClickableAvatar
+                                  src={photoUrl}
+                                  alt={prof.full_name}
+                                  fullName={prof.full_name}
+                                  participantCode={prof.participant_code}
+                                  verificationStatus={r.status}
+                                  fallback={prof.full_name.slice(0, 2).toUpperCase()}
+                                  className="h-14 w-14 rounded-2xl border shadow-xs"
+                                  fallbackClassName="text-sm"
+                                />
                                 <div>
                                   <p className="font-semibold text-foreground">{prof.full_name}</p>
                                   <p className="text-xs text-muted-foreground font-mono">{prof.participant_code}</p>
@@ -1073,10 +1078,14 @@ function AdminPage() {
                         className="flex items-center justify-between rounded-lg border bg-card p-3 text-sm shadow-xs hover:bg-muted/30"
                       >
                         <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={prof?.photo_path ? photoUrls[prof.photo_path] : undefined} />
-                            <AvatarFallback>{prof?.full_name?.slice(0, 2).toUpperCase()}</AvatarFallback>
-                          </Avatar>
+                          <ClickableAvatar
+                            src={prof?.photo_path ? photoUrls[prof.photo_path] : undefined}
+                            alt={prof?.full_name}
+                            fullName={prof?.full_name}
+                            participantCode={prof?.participant_code}
+                            fallback={prof?.full_name?.slice(0, 2).toUpperCase()}
+                            className="h-12 w-12 rounded-xl border shadow-xs"
+                          />
                           <div>
                             <p className="font-semibold text-foreground">{prof?.full_name}</p>
                             <p className="text-xs text-muted-foreground font-mono">{prof?.participant_code}</p>
@@ -1185,10 +1194,16 @@ function AdminPage() {
                           <tr key={p.id} className="hover:bg-muted/20">
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-3">
-                                <Avatar className="h-9 w-9">
-                                  <AvatarImage src={p.id ? photoUrls[adminData.profiles.find((x) => x.id === p.id)?.photo_path ?? ""] : undefined} />
-                                  <AvatarFallback>{p.full_name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                                </Avatar>
+                                <ClickableAvatar
+                                  src={p.id ? photoUrls[adminData.profiles.find((x) => x.id === p.id)?.photo_path ?? ""] : undefined}
+                                  alt={p.full_name}
+                                  fullName={p.full_name}
+                                  participantCode={p.participant_code}
+                                  verificationStatus={p.verification_status}
+                                  fallback={p.full_name.slice(0, 2).toUpperCase()}
+                                  className="h-14 w-14 sm:h-16 sm:w-16 rounded-2xl border shadow-xs"
+                                  fallbackClassName="text-sm font-bold"
+                                />
                                 <div>
                                   <p className="font-semibold text-foreground flex items-center gap-1.5">
                                     {p.full_name}
@@ -1365,9 +1380,15 @@ function AdminPage() {
                                 <span className="text-[11px] font-semibold text-muted-foreground uppercase">
                                   Reference Photo
                                 </span>
-                                <div className="mt-1 aspect-square rounded-lg border bg-muted/40 overflow-hidden">
+                                <div className="mt-1 aspect-square rounded-lg border bg-muted/40 overflow-hidden flex items-center justify-center">
                                   {prof?.photo_path && photoUrls[prof.photo_path] ? (
-                                    <img src={photoUrls[prof.photo_path]} alt="Reference" className="h-full w-full object-cover" />
+                                    <ClickableAvatar
+                                      src={photoUrls[prof.photo_path]}
+                                      alt="Reference Photo"
+                                      fullName={prof.full_name}
+                                      participantCode={prof.participant_code}
+                                      className="w-full h-full rounded-none"
+                                    />
                                   ) : (
                                     <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
                                       No Photo
@@ -1379,9 +1400,15 @@ function AdminPage() {
                                 <span className="text-[11px] font-semibold text-muted-foreground uppercase">
                                   Check-in Selfie
                                 </span>
-                                <div className="mt-1 aspect-square rounded-lg border bg-muted/40 overflow-hidden">
+                                <div className="mt-1 aspect-square rounded-lg border bg-muted/40 overflow-hidden flex items-center justify-center">
                                   {att.selfie_path && photoUrls[att.selfie_path] ? (
-                                    <img src={photoUrls[att.selfie_path]} alt="Selfie" className="h-full w-full object-cover" />
+                                    <ClickableAvatar
+                                      src={photoUrls[att.selfie_path]}
+                                      alt="Check-in Selfie"
+                                      fullName={`${prof?.full_name ?? "Participant"} (Check-in Selfie)`}
+                                      participantCode={prof?.participant_code}
+                                      className="w-full h-full rounded-none"
+                                    />
                                   ) : (
                                     <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
                                       Selfie Uploaded
@@ -1703,14 +1730,18 @@ function AdminPage() {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="flex items-center gap-3 sm:gap-4 border-b pb-4">
-              <div className="relative group shrink-0">
-                <Avatar className="h-14 w-14 sm:h-16 sm:w-16">
-                  <AvatarImage
-                    src={photoUrls[adminData?.profiles.find((p) => p.id === selectedParticipant.id)?.photo_path ?? ""]}
-                  />
-                  <AvatarFallback>{selectedParticipant.full_name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6 border-b pb-6">
+              <div className="relative shrink-0">
+                <ClickableAvatar
+                  src={photoUrls[adminData?.profiles.find((p) => p.id === selectedParticipant.id)?.photo_path ?? ""]}
+                  alt={selectedParticipant.full_name}
+                  fullName={selectedParticipant.full_name}
+                  participantCode={selectedParticipant.participant_code}
+                  verificationStatus={selectedParticipant.verification_status}
+                  fallback={selectedParticipant.full_name.slice(0, 2).toUpperCase()}
+                  className="h-36 w-36 sm:h-40 sm:w-40 rounded-2xl border-2 border-primary/20 shadow-md"
+                  fallbackClassName="text-3xl font-display"
+                />
                 <button
                   type="button"
                   onClick={() => {
@@ -1720,10 +1751,10 @@ function AdminPage() {
                     });
                     setAdminPhotoModalOpen(true);
                   }}
-                  className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:scale-110 transition-transform"
+                  className="absolute -bottom-1 -right-1 h-9 w-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-primary z-10"
                   title="Upload or change participant photograph"
                 >
-                  <Camera className="h-2.5 w-2.5" />
+                  <Camera className="h-4 w-4" />
                 </button>
               </div>
               <div className="flex-1 min-w-0">
@@ -1958,16 +1989,16 @@ function AdminPage() {
           {viewingRecord && (
             <div className="space-y-4 pt-2">
               <div className="flex items-center gap-4 p-4 rounded-xl border bg-muted/20">
-                <Avatar className="h-20 w-20 rounded-xl border-2 border-primary/20 shadow-sm shrink-0">
-                  <AvatarImage
-                    src={viewingRecord.profile.photo_path ? photoUrls[viewingRecord.profile.photo_path] : undefined}
-                    alt={viewingRecord.profile.full_name}
-                    className="object-cover"
-                  />
-                  <AvatarFallback className="font-bold text-lg bg-primary/10 text-primary">
-                    {viewingRecord.profile.full_name.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <ClickableAvatar
+                  src={viewingRecord.profile.photo_path ? photoUrls[viewingRecord.profile.photo_path] : undefined}
+                  alt={viewingRecord.profile.full_name}
+                  fullName={viewingRecord.profile.full_name}
+                  participantCode={viewingRecord.profile.participant_code}
+                  verificationStatus={viewingRecord.attendance?.status}
+                  fallback={viewingRecord.profile.full_name.slice(0, 2).toUpperCase()}
+                  className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl border-2 border-primary/20 shadow-sm shrink-0"
+                  fallbackClassName="text-2xl font-bold"
+                />
                 <div className="min-w-0 flex-1 space-y-1">
                   <h4 className="font-display font-bold text-base text-foreground truncate">
                     {viewingRecord.profile.full_name}
