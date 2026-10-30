@@ -63,6 +63,9 @@ import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipan
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { ChangeParticipantPasswordDialog } from "@/components/admin/ChangeParticipantPasswordDialog";
 import { DeleteParticipantDialog } from "@/components/admin/DeleteParticipantDialog";
+import { PhotoCaptureInput } from "@/components/auth/PhotoCaptureInput";
+import { fileToBase64 } from "@/lib/image-validation";
+import { uploadRegistrationPhoto } from "@/lib/lookup.functions";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -137,6 +140,33 @@ function AdminPage() {
   // Participant Management Action Dialogs (Change Password & Delete Participant)
   const [passwordTargetUser, setPasswordTargetUser] = useState<{ id: string; full_name: string; participant_code: string } | null>(null);
   const [deleteTargetUser, setDeleteTargetUser] = useState<{ id: string; full_name: string; participant_code: string; email?: string; phone?: string; photoUrl?: string | null } | null>(null);
+  const [adminPhotoModalOpen, setAdminPhotoModalOpen] = useState(false);
+  const [adminPhotoTargetUser, setAdminPhotoTargetUser] = useState<{ id: string; full_name: string } | null>(null);
+  const [adminSelectedPhoto, setAdminSelectedPhoto] = useState<File | null>(null);
+  const [adminUploadingPhoto, setAdminUploadingPhoto] = useState(false);
+
+  const handleAdminSavePhoto = async () => {
+    if (!adminSelectedPhoto || !adminPhotoTargetUser?.id) return;
+    setAdminUploadingPhoto(true);
+    try {
+      const base64 = await fileToBase64(adminSelectedPhoto);
+      await uploadRegistrationPhoto({
+        data: {
+          userId: adminPhotoTargetUser.id,
+          photoBase64: base64,
+        },
+      });
+      await refetch();
+      toast.success(`Profile photograph for ${adminPhotoTargetUser.full_name} updated successfully!`);
+      setAdminPhotoModalOpen(false);
+      setAdminSelectedPhoto(null);
+      setAdminPhotoTargetUser(null);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload photo.");
+    } finally {
+      setAdminUploadingPhoto(false);
+    }
+  };
 
   // Sync settings into form
   useEffect(() => {
@@ -1654,14 +1684,47 @@ function AdminPage() {
             </DialogHeader>
 
             <div className="flex items-center gap-3 sm:gap-4 border-b pb-4">
-              <Avatar className="h-14 w-14 sm:h-16 sm:w-16 shrink-0">
-                <AvatarImage
-                  src={photoUrls[adminData?.profiles.find((p) => p.id === selectedParticipant.id)?.photo_path ?? ""]}
-                />
-                <AvatarFallback>{selectedParticipant.full_name.slice(0, 2).toUpperCase()}</AvatarFallback>
-              </Avatar>
+              <div className="relative group shrink-0">
+                <Avatar className="h-14 w-14 sm:h-16 sm:w-16">
+                  <AvatarImage
+                    src={photoUrls[adminData?.profiles.find((p) => p.id === selectedParticipant.id)?.photo_path ?? ""]}
+                  />
+                  <AvatarFallback>{selectedParticipant.full_name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminPhotoTargetUser({
+                      id: selectedParticipant.id,
+                      full_name: selectedParticipant.full_name,
+                    });
+                    setAdminPhotoModalOpen(true);
+                  }}
+                  className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:scale-110 transition-transform"
+                  title="Upload or change participant photograph"
+                >
+                  <Camera className="h-2.5 w-2.5" />
+                </button>
+              </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-display text-base sm:text-lg font-bold truncate">{selectedParticipant.full_name}</h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-display text-base sm:text-lg font-bold truncate">{selectedParticipant.full_name}</h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-[10px] gap-1 font-semibold text-primary border-primary/30 hover:bg-primary/10 shrink-0"
+                    onClick={() => {
+                      setAdminPhotoTargetUser({
+                        id: selectedParticipant.id,
+                        full_name: selectedParticipant.full_name,
+                      });
+                      setAdminPhotoModalOpen(true);
+                    }}
+                  >
+                    <Camera className="h-2.5 w-2.5" />
+                    {adminData?.profiles.find((p) => p.id === selectedParticipant.id)?.photo_path ? "Change Photo" : "Add Photo"}
+                  </Button>
+                </div>
                 <p className="font-mono text-xs text-muted-foreground">{selectedParticipant.participant_code}</p>
                 <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2">
                   <Badge variant="outline" className="text-[11px] truncate max-w-[200px]">{selectedParticipant.email}</Badge>
@@ -1818,6 +1881,49 @@ function AdminPage() {
           void refetch();
         }}
       />
+
+      {/* Admin Participant Photo Upload Dialog */}
+      <Dialog open={adminPhotoModalOpen} onOpenChange={setAdminPhotoModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg flex items-center gap-2">
+              <Camera className="h-5 w-5 text-primary" />
+              {adminPhotoTargetUser?.full_name ? `Photograph for ${adminPhotoTargetUser.full_name}` : "Upload Photograph"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Upload or take a front-facing selfie photograph for this participant.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2">
+            <PhotoCaptureInput
+              value={adminSelectedPhoto}
+              onChange={setAdminSelectedPhoto}
+              disabled={adminUploadingPhoto}
+            />
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setAdminPhotoModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!adminSelectedPhoto || adminUploadingPhoto}
+              onClick={handleAdminSavePhoto}
+              className="gap-2 font-bold"
+            >
+              {adminUploadingPhoto ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Saving…
+                </>
+              ) : (
+                "Save Photograph"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Attendee Details & Photograph Modal (Requirement 7) */}
       <Dialog open={!!viewingRecord} onOpenChange={(open) => !open && setViewingRecord(null)}>
