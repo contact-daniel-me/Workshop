@@ -455,3 +455,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[Startek FM220 Bridge] Running securely on http://${HOST}:${PORT}`);
 });
+

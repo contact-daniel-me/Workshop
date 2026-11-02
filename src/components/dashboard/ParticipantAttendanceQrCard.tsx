@@ -28,6 +28,7 @@ import {
   Check,
   HelpCircle,
   Info,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,6 +53,7 @@ interface Props {
   onOpenDigitalId?: () => void;
   onDownloadExcel?: () => void;
   onOpenPhotoModal?: () => void;
+  onOpenPasswordModal?: () => void;
   isStaff?: boolean;
 }
 
@@ -152,6 +154,7 @@ export function ParticipantAttendanceQrCard({
   onOpenDigitalId,
   onDownloadExcel,
   onOpenPhotoModal,
+  onOpenPasswordModal,
   isStaff = false,
 }: Props) {
   const [loading, setLoading] = useState(false);
@@ -419,6 +422,18 @@ export function ParticipantAttendanceQrCard({
                   >
                     <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
                     <span>Download Attendance Report</span>
+                  </Button>
+                )}
+
+                {onOpenPasswordModal && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onOpenPasswordModal}
+                    className="h-10 px-4 rounded-xl font-semibold gap-2 border-border hover:bg-muted text-foreground cursor-pointer text-xs sm:text-sm"
+                  >
+                    <KeyRound className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>Change Password</span>
                   </Button>
                 )}
 

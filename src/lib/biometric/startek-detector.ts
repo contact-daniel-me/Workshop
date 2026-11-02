@@ -177,3 +177,4 @@ export function buildStartekHardwareInfo(query: RawDeviceQuery): StartekHardware
     lastCheckedAt: new Date().toISOString(),
   };
 }
+

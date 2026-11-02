@@ -820,3 +820,4 @@ export function FingerprintBiometricTestLab() {
     </div>
   );
 }
+

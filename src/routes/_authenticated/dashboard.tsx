@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { ParticipantAttendanceQrCard } from "@/components/dashboard/ParticipantAttendanceQrCard";
+import { StudentChangePasswordDialog } from "@/components/dashboard/StudentChangePasswordDialog";
 import { PhotoCaptureInput } from "@/components/auth/PhotoCaptureInput";
 import { fileToBase64 } from "@/lib/image-validation";
 import { uploadRegistrationPhoto } from "@/lib/lookup.functions";
@@ -69,6 +70,7 @@ function DashboardPage() {
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
   // Load signed avatar photo
   useEffect(() => {
@@ -270,6 +272,7 @@ function DashboardPage() {
             onOpenDigitalId={() => setIdModalOpen(true)}
             onDownloadExcel={handleDownloadExcel}
             onOpenPhotoModal={() => setPhotoModalOpen(true)}
+            onOpenPasswordModal={() => setPasswordModalOpen(true)}
             isStaff={me?.isStaff}
             onAttendanceUpdated={() => {
               void qc.invalidateQueries({ queryKey: ["my_attendance"] });
@@ -546,6 +549,14 @@ function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* STUDENT SELF-SERVE PASSWORD CHANGE DIALOG */}
+      <StudentChangePasswordDialog
+        open={passwordModalOpen}
+        onOpenChange={setPasswordModalOpen}
+        fullName={me?.profile?.full_name}
+        participantCode={me?.profile?.participant_code}
+      />
     </div>
   );
 }

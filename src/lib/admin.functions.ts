@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizePhone, INDIAN_PHONE, type AttStatus } from "./attendance";
-import { normalizeAppPassword, phoneToAuthEmail } from "./auth-helpers";
+import { normalizeAppPassword, phoneToAuthEmail, generateDefaultStudentPassword } from "./auth-helpers";
 import { validateImageMagicBytes } from "./image-validation";
 
 /** Staff only: Mark or correct participant attendance manually with a mandatory reason */
@@ -279,7 +279,8 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
       const rawPhone = String(input.phone ?? "").trim();
       const phone = normalizePhone(rawPhone);
       const email = String(input.email ?? "").trim().toLowerCase();
-      const password = String(input.password ?? "").trim();
+      const rawPassword = String(input.password ?? "").trim();
+      const password = rawPassword || generateDefaultStudentPassword(fullName, phone);
       // Participants registered by an administrator are auto-approved immediately
       const verificationStatus: "verified" = "verified";
       const photoBase64 = String(input.photoBase64 ?? "").trim();
@@ -294,8 +295,8 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new Error("A valid email address is required.");
       }
-      if (!password || password.length < 8) {
-        throw new Error("Password must be at least 8 characters long.");
+      if (!password || password.length < 6) {
+        throw new Error("Password must be at least 6 characters long.");
       }
       if (!photoBase64) {
         throw new Error("A clear profile photograph is required.");
@@ -441,6 +442,7 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
           email: updatedProfile.email,
           verificationStatus: updatedProfile.verification_status,
           photoUrl: signed?.signedUrl ?? null,
+          rawPassword: data.password,
         },
       };
     } catch (err: unknown) {

@@ -652,6 +652,43 @@ function AdminPage() {
     }
   };
 
+  const [downloadingBulkPdf, setDownloadingBulkPdf] = useState(false);
+
+  const handleDownloadBulkPdf = async () => {
+    if (!filteredParticipants.length) {
+      toast.error("No participants available to download.");
+      return;
+    }
+    setDownloadingBulkPdf(true);
+    try {
+      const { downloadBulkParticipantCredentialsPdf } = await import("@/lib/credential-pdf");
+      const list = filteredParticipants.map((p) => {
+        const photoPath = adminData?.profiles.find((x) => x.id === p.id)?.photo_path ?? "";
+        const photoUrl = p.id ? photoUrls[photoPath] : undefined;
+        return {
+          fullName: p.full_name,
+          participantCode: p.participant_code,
+          email: p.email,
+          phone: p.phone,
+          verificationStatus: p.verification_status,
+          photoUrl,
+          portalUrl: typeof window !== "undefined" ? `${window.location.origin}/auth` : "/auth",
+          workshopName: settings?.name || "Event Management Portal",
+        };
+      });
+
+      await downloadBulkParticipantCredentialsPdf(
+        list,
+        `bulk_student_credentials_${today}.pdf`
+      );
+      toast.success(`Downloaded credentials PDF pass for ${list.length} participants!`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate bulk credentials PDF.");
+    } finally {
+      setDownloadingBulkPdf(false);
+    }
+  };
+
   return (
     <div className="container mx-auto max-w-7xl px-4 py-8 space-y-8">
       {/* Portal Header */}
@@ -1372,6 +1409,21 @@ function AdminPage() {
                     className="gap-2 font-bold shadow-xs"
                   >
                     <UserPlus className="h-4 w-4" /> Register New Participant
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleDownloadBulkPdf}
+                    disabled={downloadingBulkPdf || filteredParticipants.length === 0}
+                    className="gap-2 text-teal-700 dark:text-teal-400 border-teal-300 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950/40"
+                    title="Download multi-page credentials PDF pass for all filtered participants"
+                  >
+                    {downloadingBulkPdf ? (
+                      <RotateCw className="h-4 w-4 animate-spin text-teal-600" />
+                    ) : (
+                      <FileDown className="h-4 w-4 text-teal-600" />
+                    )}
+                    <span>Bulk Credentials PDF</span>
                   </Button>
                   <Button size="sm" variant="outline" onClick={handleExportFiltered} className="gap-2">
                     <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Export Filtered (.xlsx)

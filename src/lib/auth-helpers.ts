@@ -12,6 +12,31 @@ export function normalizeAppPassword(raw: string): string {
 }
 
 /**
+ * Automatically generates a deterministic default password for students during registration:
+ * Password = First 4 letters of student name + First 4 digits of mobile number
+ *
+ * Rules:
+ * 1. Extract first four alphabetic characters of student name, preserving original casing.
+ * 2. Extract first four digits of registered mobile number (ignoring spaces, country codes).
+ * 3. Combine both values without spaces or special characters.
+ * 4. Names shorter than four characters are handled gracefully using available characters (e.g. "Raj" -> "Raj9876", "Bo" -> "Bo9876").
+ * 5. Validate that mobile number contains sufficient digits.
+ */
+export function generateDefaultStudentPassword(name: string, phone: string): string {
+  const cleanName = (name || "").trim();
+  // Extract alphabetic characters only, preserving original capitalization
+  const alphaChars = cleanName.replace(/[^a-zA-Z]/g, "");
+  const namePart = alphaChars.length > 0 ? alphaChars.slice(0, 4) : "User";
+
+  // Normalize phone (strips country code +91, leading 0, spaces, dashes)
+  const normalized = normalizePhone(phone || "");
+  const digits = normalized.replace(/\D/g, "");
+  const phonePart = digits.length >= 4 ? digits.slice(0, 4) : digits.padEnd(4, "0");
+
+  return `${namePart}${phonePart}`;
+}
+
+/**
  * Converts a normalized phone number into the deterministic auth identifier.
  */
 export function phoneToAuthEmail(phone: string): string {

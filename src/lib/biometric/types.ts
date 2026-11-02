@@ -85,3 +85,4 @@ export interface BiometricVerificationResult {
     | "INVALID_INPUT";
   message: string;
 }
+

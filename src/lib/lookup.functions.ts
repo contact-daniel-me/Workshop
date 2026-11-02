@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { normalizePhone, INDIAN_PHONE } from "./attendance";
+import { generateDefaultStudentPassword } from "./auth-helpers";
 
 export interface LookupProfileResult {
   found: boolean;
@@ -162,7 +163,8 @@ export const publicRegisterParticipant = createServerFn({ method: "POST" })
       const rawPhone = String(input.phone ?? "").trim();
       const phone = normalizePhone(rawPhone);
       const email = String(input.email ?? "").trim().toLowerCase();
-      const password = String(input.password ?? "").trim();
+      const rawPassword = String(input.password ?? "").trim();
+      const password = rawPassword || generateDefaultStudentPassword(fullName, phone);
       const photoBase64 = String(input.photoBase64 ?? "").trim();
 
       if (!fullName || fullName.length < 2 || fullName.length > 100) {
@@ -174,8 +176,8 @@ export const publicRegisterParticipant = createServerFn({ method: "POST" })
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new Error("A valid email address is required.");
       }
-      if (!password || password.length < 8) {
-        throw new Error("Password must be at least 8 characters long.");
+      if (!password || password.length < 6) {
+        throw new Error("Password must be at least 6 characters long.");
       }
       if (!photoBase64) {
         throw new Error("A clear profile photograph is required.");
@@ -303,6 +305,7 @@ export const publicRegisterParticipant = createServerFn({ method: "POST" })
           fullName: updatedProfile.full_name,
           phone: updatedProfile.phone,
           email: updatedProfile.email,
+          defaultPassword: data.password,
         },
       };
     } catch (err) {
