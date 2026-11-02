@@ -64,6 +64,7 @@ import {
 } from "lucide-react";
 import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
 import { AdminQrScannerDialog } from "@/components/admin/AdminQrScannerDialog";
+import { AdminFaceRecognitionDialog } from "@/components/admin/AdminFaceRecognitionDialog";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { ChangeParticipantPasswordDialog } from "@/components/admin/ChangeParticipantPasswordDialog";
 import { DeleteParticipantDialog } from "@/components/admin/DeleteParticipantDialog";
@@ -104,6 +105,7 @@ function AdminPage() {
   const [verificationMode, setVerificationMode] = useState<"qr" | "face">("qr");
   const [cameraTrigger, setCameraTrigger] = useState(1);
   const [qrScannerDialogOpen, setQrScannerDialogOpen] = useState(false);
+  const [faceRecognitionDialogOpen, setFaceRecognitionDialogOpen] = useState(false);
 
   // QR Display State
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -609,9 +611,7 @@ function AdminPage() {
           <Button
             size="sm"
             onClick={() => {
-              setActiveTab("scanner");
-              setVerificationMode("face");
-              setCameraTrigger((prev) => prev + 1);
+              setFaceRecognitionDialogOpen(true);
             }}
             className="gap-2 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
           >
@@ -690,7 +690,7 @@ function AdminPage() {
             approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
             activeMode={verificationMode}
             onModeChange={setVerificationMode}
-            isTabActive={!qrScannerDialogOpen && activeTab === "scanner"}
+            isTabActive={!qrScannerDialogOpen && !faceRecognitionDialogOpen && activeTab === "scanner"}
             cameraTrigger={cameraTrigger}
           />
         </TabsContent>
@@ -2246,6 +2246,15 @@ function AdminPage() {
         onOpenChange={setQrScannerDialogOpen}
         onAttendanceConfirmed={() => void refetch()}
         workshopName={settings?.name}
+      />
+
+      {/* Live Face Recognition Verification Popup Dialog (Direct face camera only) */}
+      <AdminFaceRecognitionDialog
+        open={faceRecognitionDialogOpen}
+        onOpenChange={setFaceRecognitionDialogOpen}
+        onAttendanceConfirmed={() => void refetch()}
+        workshopName={settings?.name}
+        approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
       />
     </div>
   );
