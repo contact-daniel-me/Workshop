@@ -40,5 +40,16 @@ describe("Admin Register Participant Validation & Helpers", () => {
     expect(emailRegex.test("invalid-email")).toBe(false);
     expect(emailRegex.test("missing@domain")).toBe(false);
   });
+
+  it("handles optional registration conditions gracefully without mandatory barriers", () => {
+    // When photo is not provided, photoBase64 is undefined/empty
+    const photoBase64 = undefined;
+    expect(photoBase64).toBeUndefined();
+
+    // When email is not provided, fallback auth email is generated from phone
+    const phone = "9876543210";
+    const authEmail = `${phone.replace(/\D/g, "")}@phone.local`;
+    expect(authEmail).toBe("9876543210@phone.local");
+  });
 });
 

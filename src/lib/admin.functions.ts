@@ -267,48 +267,39 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(
     (input: {
-      fullName: string;
-      phone: string;
-      email: string;
-      password: string;
+      fullName?: string;
+      phone?: string;
+      email?: string;
+      password?: string;
       verificationStatus?: "verified" | "pending";
-      photoBase64: string;
+      photoBase64?: string;
       remarks?: string;
     }) => {
-      const fullName = String(input.fullName ?? "").trim();
+      const rawName = String(input.fullName ?? "").trim();
+      const fullName = rawName || "Participant";
       const rawPhone = String(input.phone ?? "").trim();
-      const phone = normalizePhone(rawPhone);
-      const email = String(input.email ?? "").trim().toLowerCase();
+      const cleanPhone = rawPhone ? normalizePhone(rawPhone) : "";
+      // If no phone provided, generate a dedicated unique mobile identifier
+      const phone = cleanPhone || `99${Date.now().toString().slice(-8)}`;
+
+      const rawEmail = String(input.email ?? "").trim().toLowerCase();
+      const email = rawEmail || phoneToAuthEmail(phone);
+
       const rawPassword = String(input.password ?? "").trim();
       const password = rawPassword || generateDefaultStudentPassword(fullName, phone);
+
       // Participants registered by an administrator are auto-approved immediately
       const verificationStatus: "verified" = "verified";
       const photoBase64 = String(input.photoBase64 ?? "").trim();
       const remarks = input.remarks ? String(input.remarks).trim().slice(0, 500) : "";
 
-      if (!fullName || fullName.length < 2 || fullName.length > 100) {
-        throw new Error("Full name is required (2-100 characters).");
-      }
-      if (!phone || !INDIAN_PHONE.test(phone)) {
-        throw new Error("A valid 10-digit mobile number is required.");
-      }
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error("A valid email address is required.");
-      }
-      if (!password || password.length < 6) {
-        throw new Error("Password must be at least 6 characters long.");
-      }
-      if (!photoBase64) {
-        throw new Error("A clear profile photograph is required.");
-      }
-
       return {
         fullName,
         phone,
         email,
-        password,
+        password: password.length >= 6 ? password : `${password}1234`,
         verificationStatus,
-        photoBase64,
+        photoBase64: photoBase64 || undefined,
         remarks: remarks || undefined,
       };
     },
@@ -318,37 +309,49 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
     const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
     if (!staff) throw new Error("Unauthorized: Only administrators can register participants.");
 
-    // 1. Uniqueness check against existing accounts
-    const { data: duplicatePhone } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("phone", data.phone)
-      .maybeSingle();
+    // 1. Uniqueness check against existing accounts (only check if provided by user)
+    if (data.phone && !data.phone.startsWith("unset-")) {
+      const { data: duplicatePhone } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("phone", data.phone)
+        .maybeSingle();
 
-    if (duplicatePhone) {
-      throw new Error(`An account with mobile number ${data.phone} is already registered.`);
+      if (duplicatePhone) {
+        throw new Error(`An account with mobile number ${data.phone} is already registered.`);
+      }
     }
 
-    const { data: duplicateEmail } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("email", data.email)
-      .maybeSingle();
+    if (data.email && !data.email.endsWith("@workshop.internal")) {
+      const { data: duplicateEmail } = await supabase
+        .from("profiles")
+        .select("id")
+        .ilike("email", data.email)
+        .maybeSingle();
 
-    if (duplicateEmail) {
-      throw new Error(`An account with email address ${data.email} is already registered.`);
+      if (duplicateEmail) {
+        throw new Error(`An account with email address ${data.email} is already registered.`);
+      }
     }
 
-    // 2. Validate photograph content & magic bytes
-    let cleanBase64 = data.photoBase64;
-    if (cleanBase64.includes(",")) {
-      cleanBase64 = cleanBase64.split(",")[1];
+    // 2. Validate photograph content & magic bytes (if photo is provided)
+    let photoBuffer: Buffer | null = null;
+    let photoExt = "";
+    let photoMime = "";
+
+    if (data.photoBase64) {
+      let cleanBase64 = data.photoBase64;
+      if (cleanBase64.includes(",")) {
+        cleanBase64 = cleanBase64.split(",")[1]!;
+      }
+      photoBuffer = Buffer.from(cleanBase64, "base64");
+      if (photoBuffer.length > 5 * 1024 * 1024) {
+        throw new Error("Photograph exceeds the 5 MB file size limit.");
+      }
+      const magic = validateImageMagicBytes(photoBuffer);
+      photoExt = magic.ext;
+      photoMime = magic.mime;
     }
-    const photoBuffer = Buffer.from(cleanBase64, "base64");
-    if (photoBuffer.length > 5 * 1024 * 1024) {
-      throw new Error("Photograph exceeds the 5 MB file size limit.");
-    }
-    const { ext, mime } = validateImageMagicBytes(photoBuffer);
 
     // 3. Create authentication account using Supabase Auth Admin API
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -373,30 +376,39 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
     }
 
     const newUserId = authUser.user.id;
-    let photoPath = "";
+    let photoPath: string | null = null;
 
     try {
-      // 4. Upload photo to private 'photos' storage bucket in user-specific path
-      photoPath = `${newUserId}/profile_${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from("photos")
-        .upload(photoPath, photoBuffer, {
-          contentType: mime,
-          upsert: true,
-        });
+      if (photoBuffer) {
+        // 4. Upload photo to private 'photos' storage bucket in user-specific path
+        photoPath = `${newUserId}/profile_${Date.now()}.${photoExt}`;
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from("photos")
+          .upload(photoPath, photoBuffer, {
+            contentType: photoMime,
+            upsert: true,
+          });
 
-      if (uploadError) {
-        throw new Error(`Failed to store photograph: ${uploadError.message}`);
+        if (uploadError) {
+          throw new Error(`Failed to store photograph: ${uploadError.message}`);
+        }
       }
 
-      // 5. Update profile with photo_path and administrator-selected verification status
+      // 5. Update profile with administrator-selected verification status and optional photo_path
+      const updatePayload: Record<string, unknown> = {
+        verification_status: data.verificationStatus,
+        updated_at: new Date().toISOString(),
+      };
+      if (photoPath) {
+        updatePayload.photo_path = photoPath;
+      }
+      if (data.remarks) {
+        updatePayload.remarks = data.remarks;
+      }
+
       const { data: updatedProfile, error: profileError } = await supabaseAdmin
         .from("profiles")
-        .update({
-          photo_path: photoPath,
-          verification_status: data.verificationStatus,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq("id", newUserId)
         .select("id, participant_code, full_name, phone, email, photo_path, verification_status, created_at")
         .single();
@@ -422,15 +434,20 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
           participant_code: updatedProfile.participant_code,
           verification_status: data.verificationStatus,
           remarks: data.remarks ?? null,
+          has_photo: Boolean(photoPath),
           registered_by: userId,
           timestamp: new Date().toISOString(),
         } as never,
       });
 
-      // 8. Generate signed URL for immediate preview
-      const { data: signed } = await supabaseAdmin.storage
-        .from("photos")
-        .createSignedUrl(photoPath, 3600);
+      // 8. Generate signed URL for immediate preview (if photo uploaded)
+      let signedUrl: string | null = null;
+      if (photoPath) {
+        const { data: signed } = await supabaseAdmin.storage
+          .from("photos")
+          .createSignedUrl(photoPath, 3600);
+        signedUrl = signed?.signedUrl ?? null;
+      }
 
       return {
         ok: true,
@@ -441,7 +458,7 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
           phone: updatedProfile.phone,
           email: updatedProfile.email,
           verificationStatus: updatedProfile.verification_status,
-          photoUrl: signed?.signedUrl ?? null,
+          photoUrl: signedUrl,
           rawPassword: data.password,
         },
       };
