@@ -260,9 +260,9 @@ export function ParticipantAttendanceQrCard({
 
       <CardContent className="p-5 sm:p-6">
         {/* Two-Column Layout on Desktop, Mobile-First (QR Code appears first on mobile) */}
-        <div className="flex flex-col-reverse lg:flex-row items-center lg:items-start justify-between gap-6 lg:gap-8">
-          {/* LEFT COLUMN: Participant Information & Attendance Actions */}
-          <div className="flex-1 space-y-5 w-full">
+        <div className="flex flex-col-reverse lg:flex-row items-center lg:items-stretch justify-between gap-6 lg:gap-8">
+          {/* LEFT COLUMN: Participant Information & Attendance Actions (Vertically Centered) */}
+          <div className="flex-1 flex flex-col justify-center space-y-4 sm:space-y-5 w-full self-stretch py-1">
             {/* Participant Profile Details Card */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl border bg-muted/20">
               <div className="relative shrink-0">
@@ -364,7 +364,7 @@ export function ParticipantAttendanceQrCard({
                     onClick={onOpenScanner}
                     className="h-10 px-4 rounded-xl font-bold bg-primary text-primary-foreground hover:bg-primary/90 gap-2 shadow-xs cursor-pointer text-xs sm:text-sm"
                   >
-                    <Camera className="h-4 w-4" />
+                    <Camera className="h-4 w-4 shrink-0" />
                     <span>Scan Presenter Screen / Enter Code</span>
                   </Button>
                 )}
@@ -406,6 +406,18 @@ export function ParticipantAttendanceQrCard({
                   </Button>
                 )}
               </div>
+            </div>
+
+            {/* Compact Attendance Guidance */}
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-muted/30 border border-border/50 text-xs text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+              <span>
+                {isAlreadyPresent ? (
+                  <>Attendance recorded for today. You can view your digital pass or export attendance records at any time.</>
+                ) : (
+                  <>Present your QR code on the right to the workshop administrator, or tap <strong className="text-foreground font-semibold">Scan Presenter Screen</strong> to check in with the venue display.</>
+                )}
+              </span>
             </div>
           </div>
 
