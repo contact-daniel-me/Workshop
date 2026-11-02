@@ -57,6 +57,7 @@ function DashboardPage() {
   const { data: attData } = useMyAttendance();
 
   const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [idModalOpen, setIdModalOpen] = useState(false);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
@@ -103,8 +104,6 @@ function DashboardPage() {
   const isApproved = me?.profile?.verification_status === "verified";
   const isPending = !me?.profile?.verification_status || me?.profile?.verification_status === "pending";
   const isRejected = me?.profile?.verification_status === "rejected";
-
-  const [dashboardTab, setDashboardTab] = useState<"attendance" | "digital-id">("attendance");
 
   const digitalIdData = useMemo(() => {
     if (!me?.user || !me?.profile) return null;
@@ -246,25 +245,24 @@ function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            variant={dashboardTab === "digital-id" ? "default" : "outline"}
-            onClick={() => setDashboardTab((curr) => (curr === "digital-id" ? "attendance" : "digital-id"))}
-            className="gap-2 text-xs sm:text-sm font-bold shadow-xs border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+            onClick={() => setIdModalOpen(true)}
+            className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
           >
-            <IdCard className="h-4 w-4 text-emerald-600" />
-            <span>My Digital ID</span>
+            <IdCard className="h-4 w-4 text-white shrink-0" />
+            <span className="text-white">My Digital ID</span>
           </Button>
 
           {isApproved && isWorkshopDay && (
             <Button
               size="sm"
               onClick={() => setScanModalOpen(true)}
-              className="gap-2 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 text-xs sm:text-sm"
+              className="gap-2 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 text-xs sm:text-sm cursor-pointer"
             >
               <Camera className="h-4 w-4" /> Scan Workshop QR
             </Button>
           )}
           {isApproved && (
-            <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="gap-2 text-xs sm:text-sm">
+            <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="gap-2 text-xs sm:text-sm cursor-pointer">
               <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Download Report (.xlsx)
             </Button>
           )}
@@ -278,53 +276,7 @@ function DashboardPage() {
         </div>
       </div>
 
-      {/* Participant Navigation Tabs */}
-      <div className="flex items-center p-1 bg-muted/80 rounded-2xl border w-full sm:w-auto self-start gap-1">
-        <Button
-          size="sm"
-          variant={dashboardTab === "attendance" ? "default" : "ghost"}
-          onClick={() => setDashboardTab("attendance")}
-          className={`gap-2 text-xs font-bold rounded-xl flex-1 sm:flex-initial transition-all ${
-            dashboardTab === "attendance" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
-          }`}
-        >
-          <QrCode className="h-4 w-4 text-primary" /> Attendance & QR
-        </Button>
-        <Button
-          size="sm"
-          variant={dashboardTab === "digital-id" ? "default" : "ghost"}
-          onClick={() => setDashboardTab("digital-id")}
-          className={`gap-2 text-xs font-bold rounded-xl flex-1 sm:flex-initial transition-all ${
-            dashboardTab === "digital-id" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
-          }`}
-        >
-          <IdCard className="h-4 w-4 text-emerald-600" /> My Digital ID
-        </Button>
-      </div>
-
-      {/* SECTION 1: MY DIGITAL ID TAB */}
-      {dashboardTab === "digital-id" && digitalIdData && (
-        <div className="space-y-6">
-          <div className="border-b pb-3">
-            <h2 className="font-display text-2xl font-bold text-foreground flex items-center gap-2">
-              <IdCard className="h-6 w-6 text-emerald-600" /> Smart Digital Participant ID Card
-            </h2>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              Your official institutional event pass, dynamic attendance credential, and access card.
-            </p>
-          </div>
-
-          <DigitalParticipantIdCard
-            data={digitalIdData}
-            stats={digitalIdStats}
-          />
-        </div>
-      )}
-
-      {/* SECTION 2: ATTENDANCE & QR OVERVIEW TAB */}
-      {dashboardTab === "attendance" && (
-        <>
-          {/* REQUIREMENT 4: PENDING APPROVAL SCREEN */}
+      {/* PENDING APPROVAL SCREEN */}
       {isPending && (
         <Card className="border-warning/40 bg-warning/5 shadow-sm">
           <CardContent className="flex flex-col items-center justify-center p-8 sm:p-12 text-center space-y-4">
@@ -362,10 +314,26 @@ function DashboardPage() {
         </Card>
       )}
 
-      {/* APPROVED PARTICIPANT CONTENT */}
+      {/* APPROVED PARTICIPANT CONTENT - UNIFIED DASHBOARD */}
       {isApproved && (
         <>
-          {/* KPI Stats Grid */}
+          {/* 1. HERO: DAILY ATTENDANCE QR CODE PASS (FRONT & CENTER) */}
+          <ParticipantAttendanceQrCard
+            participantId={me?.user?.id}
+            fullName={me?.profile?.full_name}
+            participantCode={me?.profile?.participant_code}
+            photoUrl={photoUrl}
+            verificationStatus={me?.profile?.verification_status}
+            todayDate={today}
+            isWorkshopDay={isWorkshopDay}
+            isLastWorkshopDay={settings ? workshopDays(settings).slice(-1)[0] === today : false}
+            onOpenScanner={() => setScanModalOpen(true)}
+            onAttendanceUpdated={() => {
+              void qc.invalidateQueries({ queryKey: ["my_attendance"] });
+            }}
+          />
+
+          {/* 2. ATTENDANCE METRICS KPI GRID */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card className="shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -417,7 +385,7 @@ function DashboardPage() {
             </Card>
           </div>
 
-          {/* Live Workshop Projector QR Scan Banner */}
+          {/* 3. LIVE WORKSHOP PROJECTOR QR SCAN BANNER (When applicable) */}
           {isApproved && isWorkshopDay && todayRecord?.status !== "present" && (
             <Card className="border-2 border-primary/40 bg-gradient-to-r from-primary/10 via-primary/5 to-card shadow-sm">
               <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -441,7 +409,7 @@ function DashboardPage() {
                 </div>
                 <Button
                   onClick={() => setScanModalOpen(true)}
-                  className="w-full sm:w-auto shrink-0 gap-2 font-bold bg-primary text-primary-foreground shadow-sm px-6 h-10 hover:scale-[1.02] transition-transform text-xs sm:text-sm"
+                  className="w-full sm:w-auto shrink-0 gap-2 font-bold bg-primary text-primary-foreground shadow-sm px-6 h-10 hover:scale-[1.02] transition-transform text-xs sm:text-sm cursor-pointer"
                 >
                   <Camera className="h-4 w-4" /> Scan Workshop QR Code
                 </Button>
@@ -449,23 +417,36 @@ function DashboardPage() {
             </Card>
           )}
 
-          {/* Prominent My Attendance QR Section */}
-          <ParticipantAttendanceQrCard
-            participantId={me?.user?.id}
-            fullName={me?.profile?.full_name}
-            participantCode={me?.profile?.participant_code}
-            photoUrl={photoUrl}
-            verificationStatus={me?.profile?.verification_status}
-            todayDate={today}
-            isWorkshopDay={isWorkshopDay}
-            isLastWorkshopDay={settings ? workshopDays(settings).slice(-1)[0] === today : false}
-            onOpenScanner={() => setScanModalOpen(true)}
-            onAttendanceUpdated={() => {
-              void qc.invalidateQueries({ queryKey: ["my_attendance"] });
-            }}
-          />
+          {/* 4. SMART DIGITAL PARTICIPANT ID CARD SECTION */}
+          {digitalIdData && (
+            <Card className="shadow-sm border">
+              <CardHeader className="pb-3 border-b">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-700 shrink-0">
+                      <IdCard className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="font-display text-lg sm:text-xl font-bold">
+                        Digital Participant ID Card
+                      </CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        Official attendee credential and access pass. Click the card or toggle sides to flip.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <DigitalParticipantIdCard
+                  data={digitalIdData}
+                  stats={digitalIdStats}
+                />
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Attendance Calendar Grid */}
+          {/* 5. WORKSHOP ATTENDANCE CALENDAR */}
           <Card className="shadow-sm">
             <CardHeader>
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -492,7 +473,7 @@ function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Detailed Attendance History Table */}
+          {/* 6. ATTENDANCE HISTORY TABLE */}
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle className="font-display text-xl">Attendance History</CardTitle>
@@ -537,8 +518,36 @@ function DashboardPage() {
           </Card>
         </>
       )}
-      </>
-      )}
+
+      {/* Digital ID Card Popup Dialog (for header button click) */}
+      <Dialog open={idModalOpen} onOpenChange={setIdModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 w-[95vw] sm:w-full">
+          <DialogHeader className="pb-2">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-700 shrink-0">
+                <IdCard className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold font-display text-foreground">
+                  Digital Participant ID Card
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Official attendee pass and dynamic attendance credential for {me?.profile?.full_name}.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {digitalIdData && (
+            <div className="pt-2">
+              <DigitalParticipantIdCard
+                data={digitalIdData}
+                stats={digitalIdStats}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* QR Check-in Modal */}
       <QrCheckinDialog
