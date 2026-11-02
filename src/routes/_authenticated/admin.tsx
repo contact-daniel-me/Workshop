@@ -102,6 +102,8 @@ function AdminPage() {
   const [activeTab, setActiveTab] = useState("scanner");
   const [verificationMode, setVerificationMode] = useState<"qr" | "face">("qr");
   const [cameraTrigger, setCameraTrigger] = useState(1);
+  const [scannerDialogOpen, setScannerDialogOpen] = useState(false);
+  const [scannerDialogMode, setScannerDialogMode] = useState<"qr" | "face">("qr");
 
   // QR Display State
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -595,17 +597,13 @@ function AdminPage() {
 
           <Button
             size="sm"
-            variant={activeTab === "scanner" && verificationMode === "qr" ? "default" : "outline"}
             onClick={() => {
               setActiveTab("scanner");
               setVerificationMode("qr");
-              setCameraTrigger((prev) => prev + 1);
+              setScannerDialogMode("qr");
+              setScannerDialogOpen(true);
             }}
-            className={`gap-2 text-xs sm:text-sm font-semibold shadow-xs transition-all ${
-              activeTab === "scanner" && verificationMode === "qr"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "border-primary/40 text-primary hover:bg-primary/5"
-            }`}
+            className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
           >
             <QrCode className="h-4 w-4 shrink-0" />
             <span>QR Code Verification</span>
@@ -613,17 +611,13 @@ function AdminPage() {
 
           <Button
             size="sm"
-            variant={activeTab === "scanner" && verificationMode === "face" ? "default" : "outline"}
             onClick={() => {
               setActiveTab("scanner");
               setVerificationMode("face");
-              setCameraTrigger((prev) => prev + 1);
+              setScannerDialogMode("face");
+              setScannerDialogOpen(true);
             }}
-            className={`gap-2 text-xs sm:text-sm font-semibold shadow-xs transition-all ${
-              activeTab === "scanner" && verificationMode === "face"
-                ? "bg-purple-700 hover:bg-purple-800 text-white shadow-sm"
-                : "border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40"
-            }`}
+            className="gap-2 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
           >
             <ScanFace className="h-4 w-4 shrink-0" />
             <span>Face Recognition</span>
@@ -700,7 +694,7 @@ function AdminPage() {
             approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
             activeMode={verificationMode}
             onModeChange={setVerificationMode}
-            isTabActive={activeTab === "scanner"}
+            isTabActive={!scannerDialogOpen && activeTab === "scanner"}
             cameraTrigger={cameraTrigger}
           />
         </TabsContent>
@@ -2249,6 +2243,44 @@ function AdminPage() {
         }}
         canApprove={me?.isStaff ?? false}
       />
+
+      {/* Live Attendance Scanner Popup Dialog */}
+      <Dialog open={scannerDialogOpen} onOpenChange={setScannerDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 w-[95vw] sm:w-full">
+          <DialogHeader className="pb-2">
+            <div className="flex items-center gap-2.5">
+              <div className={`p-2 rounded-lg ${scannerDialogMode === "qr" ? "bg-primary/10 text-primary" : "bg-purple-500/10 text-purple-600"}`}>
+                {scannerDialogMode === "qr" ? (
+                  <QrCode className="h-5 w-5" />
+                ) : (
+                  <ScanFace className="h-5 w-5" />
+                )}
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold font-display text-foreground">
+                  {scannerDialogMode === "qr" ? "Live QR Code Attendance Scanner" : "Live Face Recognition Verification"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  {scannerDialogMode === "qr"
+                    ? "Point camera at participant's daily rotating QR code or enter backup token to record attendance."
+                    : "Align attendee's face within the guide overlay to match against enrolled portraits."}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="pt-2">
+            <AdminQrScannerTab
+              workshopName={settings?.name}
+              onAttendanceConfirmed={() => void refetch()}
+              approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
+              activeMode={scannerDialogMode}
+              onModeChange={setScannerDialogMode}
+              isTabActive={scannerDialogOpen}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
