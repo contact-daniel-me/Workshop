@@ -6,6 +6,13 @@ import { getNextSessionUnlockTime } from "@/lib/attendance";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import {
   QrCode,
@@ -19,6 +26,8 @@ import {
   FileSpreadsheet,
   Copy,
   Check,
+  HelpCircle,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -150,6 +159,7 @@ export function ParticipantAttendanceQrCard({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
 
   const isApproved = verificationStatus === "verified";
 
@@ -495,20 +505,40 @@ export function ParticipantAttendanceQrCard({
                         <span className="text-xs font-mono text-muted-foreground">Generating QR…</span>
                       </div>
                     ) : qrDataUrl ? (
-                      <img
-                        src={qrDataUrl}
-                        alt="My Attendance QR Code"
-                        className="h-52 w-52 sm:h-56 sm:w-56 object-contain rounded-xl"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setInfoModalOpen(true)}
+                        className="cursor-pointer group relative block focus:outline-hidden"
+                        title="Click to view attendance verification instructions"
+                      >
+                        <img
+                          src={qrDataUrl}
+                          alt="My Attendance QR Code"
+                          className="h-52 w-52 sm:h-56 sm:w-56 object-contain rounded-xl transition-transform group-hover:scale-[1.02]"
+                        />
+                        <div className="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors rounded-xl flex items-center justify-center pointer-events-none">
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 text-white text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-md backdrop-blur-xs flex items-center gap-1">
+                            <Info className="h-3 w-3" /> Tap for verification info
+                          </span>
+                        </div>
+                      </button>
                     ) : (
                       <div className="h-52 w-52 sm:h-56 sm:w-56 flex items-center justify-center bg-muted/20 rounded-xl">
                         <QrCode className="h-10 w-10 text-muted-foreground" />
                       </div>
                     )}
                     <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-primary text-primary-foreground font-mono text-[10px] tracking-wider uppercase shadow-xs px-2.5 py-0.5 whitespace-nowrap">
-                        SCAN TO VERIFY
-                      </Badge>
+                      <button
+                        type="button"
+                        onClick={() => setInfoModalOpen(true)}
+                        className="group cursor-pointer focus:outline-hidden"
+                        title="Attendee pass — Click to see how attendance works"
+                      >
+                        <Badge className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-[10px] tracking-wider uppercase shadow-xs px-2.5 py-0.5 whitespace-nowrap gap-1 transition-transform group-hover:scale-105">
+                          <span>ATTENDEE PASS</span>
+                          <HelpCircle className="h-2.5 w-2.5 opacity-80" />
+                        </Badge>
+                      </button>
                     </div>
                   </div>
 
@@ -543,12 +573,92 @@ export function ParticipantAttendanceQrCard({
                       <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh QR
                     </Button>
                   </div>
+
+                  {/* Quick Verification Guidance Link */}
+                  <button
+                    type="button"
+                    onClick={() => setInfoModalOpen(true)}
+                    className="text-[11px] text-primary/80 hover:text-primary hover:underline inline-flex items-center gap-1 font-medium pt-1 cursor-pointer transition-colors"
+                  >
+                    <HelpCircle className="h-3 w-3" /> How does verification work?
+                  </button>
                 </>
               )}
             </div>
           </div>
         </div>
       </CardContent>
+
+      {/* Attendance Verification Guidance Modal */}
+      <Dialog open={infoModalOpen} onOpenChange={setInfoModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-display text-lg">
+              <QrCode className="h-5 w-5 text-primary" /> Daily Attendance Verification
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Here is how your attendance is verified and marked for today's session:
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-1 text-xs">
+            {/* Method 1: Organizer Scan */}
+            <div className="p-3.5 rounded-xl border-2 border-primary/20 bg-primary/5 space-y-1.5">
+              <div className="flex items-center justify-between font-bold text-foreground">
+                <span className="flex items-center gap-1.5 text-primary">
+                  <ShieldCheck className="h-4 w-4 shrink-0" /> Method 1: Organizer Scan (Recommended)
+                </span>
+                <Badge variant="outline" className="text-[10px] bg-card uppercase font-mono border-primary/30 text-primary">
+                  Primary
+                </Badge>
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                Present your personal QR code on your dashboard to the workshop organizer or scan-desk. The organizer will scan your pass to confirm and record your attendance.
+              </p>
+              {qrData?.shortCode && (
+                <div className="pt-1 flex items-center justify-between bg-card border rounded-lg px-2.5 py-1.5 font-mono">
+                  <span className="text-muted-foreground text-[11px]">Your Backup Code:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCode(qrData.shortCode!)}
+                    className="font-bold text-foreground hover:text-primary flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{qrData.shortCode}</span>
+                    <Copy className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Method 2: Self Check-In */}
+            <div className="p-3.5 rounded-xl border bg-muted/40 space-y-2">
+              <div className="flex items-center justify-between font-bold text-foreground">
+                <span className="flex items-center gap-1.5 text-foreground">
+                  <Camera className="h-4 w-4 text-emerald-600 shrink-0" /> Method 2: Self Check-In (Venue Display)
+                </span>
+                <Badge variant="outline" className="text-[10px] bg-card uppercase font-mono">
+                  Self Scan
+                </Badge>
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                If the workshop presenter is displaying today's live rotating QR code on the venue wall/projector screen, tap below to open your camera or enter the presenter's 6-character screen code.
+              </p>
+              {onOpenScanner && isApproved && isWorkshopDay && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setInfoModalOpen(false);
+                    onOpenScanner();
+                  }}
+                  className="w-full gap-2 font-bold bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-9 cursor-pointer shadow-xs"
+                >
+                  <Camera className="h-4 w-4" /> Scan Presenter Screen / Enter Code
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

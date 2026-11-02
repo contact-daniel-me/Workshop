@@ -29,7 +29,16 @@ export const generateQr = createServerFn({ method: "POST" })
       throw new Error(`Today (${today}) is configured as a non-working day or holiday (${dayConfig.topic || "Holiday"}). QR session generation is disabled.`);
     if (!workshopDays(settings).includes(today))
       throw new Error("Today is not a workshop day. Check the workshop dates in Settings.");
-    await supabase.from("qr_sessions").update({ revoked: true }).eq("day_date", today).eq("revoked", false);
+    // Revoke only previous staff-generated venue projector sessions for today (preserve participant personal tokens)
+    const { data: staffList } = await supabase.from("user_roles").select("user_id").in("role", ["admin", "organizer", "staff"]);
+    const staffIds = (staffList ?? []).map((s) => s.user_id);
+    if (!staffIds.includes(userId)) staffIds.push(userId);
+    await supabase
+      .from("qr_sessions")
+      .update({ revoked: true })
+      .eq("day_date", today)
+      .in("created_by", staffIds)
+      .eq("revoked", false);
     const expires = new Date(Date.now() + settings.qr_validity_minutes * 60_000).toISOString();
     const { data, error } = await supabase
       .from("qr_sessions")

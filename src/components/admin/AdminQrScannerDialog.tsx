@@ -24,6 +24,7 @@ import {
   Clock,
   ArrowRight,
   AlertTriangle,
+  UserCheck,
 } from "lucide-react";
 import {
   verifyParticipantQr,
@@ -53,6 +54,7 @@ export function AdminQrScannerDialog({
   const [verificationResult, setVerificationResult] = useState<QrVerificationResult | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmedResult, setConfirmedResult] = useState<ConfirmAttendanceResult | null>(null);
+  const [autoConfirmOnScan, setAutoConfirmOnScan] = useState(true);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -77,7 +79,7 @@ export function AdminQrScannerDialog({
 
   // Process verified token (from scan or manual input)
   const processToken = useCallback(
-    async (rawToken: string) => {
+    async (rawToken: string, autoConfirm = false) => {
       if (isVerifying || isConfirming) return;
       const clean = rawToken.trim();
       if (!clean) return;
@@ -92,14 +94,42 @@ export function AdminQrScannerDialog({
         setVerificationResult(res);
 
         if (res.valid) {
-          if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+          if (autoConfirm && res.session?.token) {
+            setIsConfirming(true);
             try {
-              navigator.vibrate([80, 40, 80]);
-            } catch {
-              // Ignore vibration failure
+              const confirmRes = await confirmParticipantAttendance({
+                data: { token: res.session.token },
+              });
+              setConfirmedResult(confirmRes);
+              if (confirmRes.ok) {
+                if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+                  try {
+                    navigator.vibrate(150);
+                  } catch {
+                    // Ignore
+                  }
+                }
+                toast.success(`Attendance marked successfully for ${confirmRes.participant?.fullName ?? "Participant"}!`);
+                onAttendanceConfirmed?.();
+              } else {
+                toast.error(confirmRes.message);
+              }
+            } catch (confErr: unknown) {
+              const cmsg = confErr instanceof Error ? confErr.message : "Confirmation failed";
+              toast.error(cmsg);
+            } finally {
+              setIsConfirming(false);
             }
+          } else {
+            if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+              try {
+                navigator.vibrate([80, 40, 80]);
+              } catch {
+                // Ignore vibration failure
+              }
+            }
+            toast.success("Valid QR code detected! Review details to confirm attendance.");
           }
-          toast.success("Valid QR code detected! Review details to confirm attendance.");
         } else {
           toast.warning(res.resultMessage || "QR verification returned an issue.");
         }
@@ -115,7 +145,7 @@ export function AdminQrScannerDialog({
         setIsVerifying(false);
       }
     },
-    [isVerifying, isConfirming, stopCamera],
+    [isVerifying, isConfirming, stopCamera, onAttendanceConfirmed],
   );
 
   // Scan frame loop using jsQR
@@ -144,13 +174,13 @@ export function AdminQrScannerDialog({
       });
 
       if (code && code.data) {
-        void processToken(code.data);
+        void processToken(code.data, autoConfirmOnScan);
         return;
       }
     }
 
     animFrameRef.current = requestAnimationFrame(scanFrame);
-  }, [processToken]);
+  }, [processToken, autoConfirmOnScan]);
 
   // Start camera stream directly
   const startCamera = useCallback(
@@ -300,10 +330,23 @@ export function AdminQrScannerDialog({
             <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
               <QrCode className="h-5 w-5" />
             </div>
-            <div>
-              <DialogTitle className="text-xl font-bold font-display text-foreground">
-                QR Code Attendance Scanner
-              </DialogTitle>
+            <div className="flex-1">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <DialogTitle className="text-xl font-bold font-display text-foreground">
+                  QR Code Attendance Scanner
+                </DialogTitle>
+                <button
+                  type="button"
+                  onClick={() => setAutoConfirmOnScan((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer bg-card hover:bg-muted shadow-2xs"
+                  title="When ON, verifying a code marks attendance immediately in 1 step"
+                >
+                  <span className="text-muted-foreground text-[11px]">Auto-Confirm:</span>
+                  <Badge className={`text-[10px] font-mono uppercase px-1.5 py-0 ${autoConfirmOnScan ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground border"}`}>
+                    {autoConfirmOnScan ? "ON" : "OFF"}
+                  </Badge>
+                </button>
+              </div>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 Point camera directly at participant's daily rotating QR code to mark attendance.
               </DialogDescription>
@@ -449,14 +492,14 @@ export function AdminQrScannerDialog({
                     <Button
                       onClick={handleConfirmAttendance}
                       disabled={isConfirming}
-                      className="w-full sm:flex-1 gap-2 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md py-2.5 justify-center cursor-pointer"
+                      className="w-full sm:flex-1 gap-2 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md py-2.5 justify-center cursor-pointer ring-2 ring-emerald-400 ring-offset-2"
                     >
                       {isConfirming ? (
                         <RefreshCw className="h-4 w-4 animate-spin" />
                       ) : (
                         <CheckCircle2 className="h-4 w-4" />
                       )}
-                      <span>Confirm Attendance</span>
+                      <span>Confirm Attendance Now</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -568,25 +611,39 @@ export function AdminQrScannerDialog({
                     value={manualCode}
                     onChange={(e) => setManualCode(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") void processToken(manualCode);
+                      if (e.key === "Enter") void processToken(manualCode, true);
                     }}
                     className="font-mono text-xs w-full h-8"
                   />
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void processToken(manualCode)}
-                  disabled={isVerifying || !manualCode.trim()}
-                  className="gap-1.5 font-bold text-xs h-8 px-3 shrink-0 cursor-pointer"
-                >
-                  {isVerifying ? (
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Search className="h-3.5 w-3.5" />
-                  )}
-                  Verify Code
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void processToken(manualCode, true)}
+                    disabled={isVerifying || isConfirming || !manualCode.trim()}
+                    className="gap-1 font-bold text-xs h-8 px-3 shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                    title="Verify code and immediately record attendance in 1 step"
+                  >
+                    {isVerifying || isConfirming ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <UserCheck className="h-3.5 w-3.5" />
+                    )}
+                    Verify & Confirm
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void processToken(manualCode, false)}
+                    disabled={isVerifying || isConfirming || !manualCode.trim()}
+                    className="gap-1 text-xs h-8 px-2.5 shrink-0 cursor-pointer"
+                    title="Review participant details before confirming attendance"
+                  >
+                    <Search className="h-3.5 w-3.5" /> Review
+                  </Button>
+                </div>
               </div>
             </div>
           )}

@@ -81,11 +81,13 @@ export function AdminQrScannerTab({
   const [qrVerificationResult, setQrVerificationResult] = useState<QrVerificationResult | null>(null);
   const [qrConfirming, setQrConfirming] = useState(false);
   const [qrConfirmedResult, setQrConfirmedResult] = useState<ConfirmAttendanceResult | null>(null);
+  const [autoConfirmOnScan, setAutoConfirmOnScan] = useState(true);
 
   const qrVideoRef = useRef<HTMLVideoElement | null>(null);
   const qrStreamRef = useRef<MediaStream | null>(null);
   const qrAnimationFrameRef = useRef<number | null>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const confirmBtnRef = useRef<HTMLDivElement | null>(null);
 
   // =========================================================================
   // OPTION B: FACE RECOGNITION STATE
@@ -145,11 +147,18 @@ export function AdminQrScannerTab({
     }
   }, [controlledMode, internalMode]);
 
+  // Auto-scroll to confirm button when verification succeeds in manual review mode
+  useEffect(() => {
+    if (qrVerificationResult?.valid && !qrConfirmedResult) {
+      confirmBtnRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [qrVerificationResult, qrConfirmedResult]);
+
   // =========================================================================
   // QR SCANNER LOGIC
   // =========================================================================
   const processToken = useCallback(
-    async (rawToken: string) => {
+    async (rawToken: string, autoConfirm = false) => {
       if (qrVerifying || qrConfirming) return;
       const clean = rawToken.trim();
       if (!clean) return;
@@ -164,7 +173,28 @@ export function AdminQrScannerTab({
         setQrVerificationResult(res);
 
         if (res.valid) {
-          toast.success("Valid QR detected! Review details and confirm attendance.");
+          if (autoConfirm && res.session?.token) {
+            setQrConfirming(true);
+            try {
+              const confirmRes = await confirmParticipantAttendance({
+                data: { token: res.session.token },
+              });
+              setQrConfirmedResult(confirmRes);
+              if (confirmRes.ok) {
+                toast.success(`Attendance marked successfully for ${confirmRes.participant?.fullName ?? "Participant"}!`);
+                onAttendanceConfirmed?.();
+              } else {
+                toast.error(confirmRes.message);
+              }
+            } catch (confErr: unknown) {
+              const cmsg = confErr instanceof Error ? confErr.message : "Confirmation failed";
+              toast.error(cmsg);
+            } finally {
+              setQrConfirming(false);
+            }
+          } else {
+            toast.success("Valid QR detected! Review details and confirm attendance.");
+          }
         } else {
           toast.warning(res.resultMessage || "QR verification returned an issue.");
         }
@@ -180,7 +210,7 @@ export function AdminQrScannerTab({
         setQrVerifying(false);
       }
     },
-    [qrVerifying, qrConfirming, stopQrCamera],
+    [qrVerifying, qrConfirming, stopQrCamera, onAttendanceConfirmed],
   );
 
   const scanFrame = useCallback(() => {
@@ -208,13 +238,13 @@ export function AdminQrScannerTab({
       });
 
       if (code && code.data) {
-        void processToken(code.data);
+        void processToken(code.data, autoConfirmOnScan);
         return;
       }
     }
 
     qrAnimationFrameRef.current = requestAnimationFrame(scanFrame);
-  }, [processToken]);
+  }, [processToken, autoConfirmOnScan]);
 
   const startQrCamera = useCallback(
     async (mode = qrFacingMode) => {
@@ -589,14 +619,26 @@ export function AdminQrScannerTab({
                   </CardDescription>
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setAutoConfirmOnScan((prev) => !prev)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors cursor-pointer bg-card hover:bg-muted shadow-2xs"
+                    title="When ON, verifying a code marks attendance immediately in 1 step"
+                  >
+                    <span className="text-muted-foreground text-[11px]">Auto-Confirm:</span>
+                    <Badge className={`text-[10px] font-mono uppercase px-1.5 py-0 ${autoConfirmOnScan ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground border"}`}>
+                      {autoConfirmOnScan ? "ON" : "OFF"}
+                    </Badge>
+                  </button>
+
                   {qrScannerActive ? (
                     <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={toggleQrCameraFacing}
-                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
+                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto cursor-pointer"
                       >
                         <RotateCcw className="h-3.5 w-3.5" /> Flip Camera
                       </Button>
@@ -604,7 +646,7 @@ export function AdminQrScannerTab({
                         size="sm"
                         variant="destructive"
                         onClick={stopQrCamera}
-                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
+                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto cursor-pointer"
                       >
                         Stop Scanner
                       </Button>
@@ -613,7 +655,7 @@ export function AdminQrScannerTab({
                     <Button
                       size="sm"
                       onClick={() => void startQrCamera()}
-                      className="gap-2 font-bold bg-primary text-primary-foreground shadow-xs w-full sm:w-auto justify-center"
+                      className="gap-2 font-bold bg-primary text-primary-foreground shadow-xs w-full sm:w-auto justify-center cursor-pointer"
                     >
                       <Camera className="h-4 w-4" /> Start QR Scanner
                     </Button>
@@ -624,31 +666,45 @@ export function AdminQrScannerTab({
 
             <CardContent className="space-y-4 pt-1 p-4 sm:p-6">
               {/* Manual Token / Short Code Fallback */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-3 sm:p-3.5 rounded-xl bg-muted/40 border">
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5 p-3 sm:p-3.5 rounded-xl bg-muted/40 border">
                 <span className="text-xs font-semibold text-muted-foreground sm:w-44 shrink-0">
                   Manual Token / Backup Code:
                 </span>
                 <div className="relative flex-1">
                   <Input
-                    placeholder="Enter QR token or 6-char backup code…"
+                    placeholder="Enter QR token or 6-char backup code (e.g. S9B8VP)…"
                     value={manualCode}
                     onChange={(e) => setManualCode(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") void processToken(manualCode);
+                      if (e.key === "Enter") void processToken(manualCode, true);
                     }}
                     className="font-mono text-xs w-full"
                   />
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void processToken(manualCode)}
-                  disabled={qrVerifying || !manualCode.trim()}
-                  className="gap-1.5 font-bold text-xs w-full sm:w-auto justify-center"
-                >
-                  {qrVerifying ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-                  Verify Code
-                </Button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void processToken(manualCode, true)}
+                    disabled={qrVerifying || qrConfirming || !manualCode.trim()}
+                    className="gap-1.5 font-bold text-xs flex-1 sm:flex-initial justify-center bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
+                    title="Verify code and immediately mark attendance present in 1 step"
+                  >
+                    {qrVerifying || qrConfirming ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+                    Verify & Mark Present
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void processToken(manualCode, false)}
+                    disabled={qrVerifying || qrConfirming || !manualCode.trim()}
+                    className="gap-1 text-xs justify-center cursor-pointer"
+                    title="Review participant details first before confirming"
+                  >
+                    <Search className="h-3.5 w-3.5" /> Review First
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -925,22 +981,27 @@ export function AdminQrScannerTab({
                   </Button>
 
                   {qrVerificationResult.valid && (
-                    <Button
-                      size="default"
-                      onClick={handleConfirmAttendance}
-                      disabled={qrConfirming}
-                      className="gap-2 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md text-sm px-6 w-full sm:w-auto justify-center"
-                    >
-                      {qrConfirming ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-spin" /> Recording…
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="h-5 w-5" /> Confirm Attendance
-                        </>
-                      )}
-                    </Button>
+                    <div ref={confirmBtnRef} className="flex flex-col sm:flex-row items-center gap-2.5">
+                      <span className="text-xs text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1 animate-pulse">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Step 2: Finalize attendance record
+                      </span>
+                      <Button
+                        size="default"
+                        onClick={handleConfirmAttendance}
+                        disabled={qrConfirming}
+                        className="gap-2 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md text-sm px-6 w-full sm:w-auto justify-center cursor-pointer ring-2 ring-emerald-400 ring-offset-2"
+                      >
+                        {qrConfirming ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 animate-spin" /> Recording…
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="h-5 w-5" /> Confirm Attendance Now
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </CardContent>
