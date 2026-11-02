@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { ParticipantAttendanceQrCard } from "@/components/dashboard/ParticipantAttendanceQrCard";
+import { BannerAttendanceQr } from "@/components/dashboard/BannerAttendanceQr";
 import { PhotoCaptureInput } from "@/components/auth/PhotoCaptureInput";
 import { fileToBase64 } from "@/lib/image-validation";
 import { uploadRegistrationPhoto } from "@/lib/lookup.functions";
@@ -181,8 +182,8 @@ function DashboardPage() {
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8 space-y-8">
       {/* Top Welcome Profile Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl border bg-card p-6 shadow-sm">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 rounded-2xl border bg-card p-5 sm:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className="relative shrink-0">
             <ClickableAvatar
               src={photoUrl}
@@ -197,13 +198,13 @@ function DashboardPage() {
             <button
               type="button"
               onClick={() => setPhotoModalOpen(true)}
-              className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-primary z-10"
+              className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-primary z-10 cursor-pointer"
               title="Upload or change profile photograph"
             >
               <Camera className="h-4 w-4" />
             </button>
           </div>
-          <div>
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
                 Welcome, {me?.profile?.full_name ?? "Participant"}
@@ -227,7 +228,7 @@ function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setPhotoModalOpen(true)}
-                className="text-xs text-primary hover:underline font-semibold flex items-center gap-1.5 mt-1"
+                className="text-xs text-primary hover:underline font-semibold flex items-center gap-1.5 mt-1 cursor-pointer"
               >
                 <Camera className="h-3.5 w-3.5" /> Upload Profile Photograph
               </button>
@@ -239,41 +240,60 @@ function DashboardPage() {
               <span>•</span>
               <span>{settings?.duration_days ?? 30} Days Total</span>
             </p>
+
+            {/* Action Buttons Row */}
+            <div className="flex flex-wrap items-center gap-2 pt-1.5">
+              <Button
+                size="sm"
+                onClick={() => setIdModalOpen(true)}
+                className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
+              >
+                <IdCard className="h-4 w-4 text-white shrink-0" />
+                <span className="text-white">My Digital ID</span>
+              </Button>
+
+              {isApproved && isWorkshopDay && (
+                <Button
+                  size="sm"
+                  onClick={() => setScanModalOpen(true)}
+                  className="gap-2 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 text-xs sm:text-sm cursor-pointer"
+                >
+                  <Camera className="h-4 w-4" /> Scan Workshop QR
+                </Button>
+              )}
+              {isApproved && (
+                <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="gap-2 text-xs sm:text-sm cursor-pointer">
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Download Report (.xlsx)
+                </Button>
+              )}
+              {me?.isStaff && (
+                <Button asChild size="sm" variant="default" className="gap-2 text-xs sm:text-sm">
+                  <Link to="/admin">
+                    <ShieldCheck className="h-4 w-4" /> Admin Portal
+                  </Link>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            onClick={() => setIdModalOpen(true)}
-            className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer"
-          >
-            <IdCard className="h-4 w-4 text-white shrink-0" />
-            <span className="text-white">My Digital ID</span>
-          </Button>
-
-          {isApproved && isWorkshopDay && (
-            <Button
-              size="sm"
-              onClick={() => setScanModalOpen(true)}
-              className="gap-2 font-bold shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 text-xs sm:text-sm cursor-pointer"
-            >
-              <Camera className="h-4 w-4" /> Scan Workshop QR
-            </Button>
-          )}
-          {isApproved && (
-            <Button variant="outline" size="sm" onClick={handleDownloadExcel} className="gap-2 text-xs sm:text-sm cursor-pointer">
-              <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Download Report (.xlsx)
-            </Button>
-          )}
-          {me?.isStaff && (
-            <Button asChild size="sm" variant="default" className="gap-2 text-xs sm:text-sm">
-              <Link to="/admin">
-                <ShieldCheck className="h-4 w-4" /> Admin Portal
-              </Link>
-            </Button>
-          )}
-        </div>
+        {/* Dynamic Quick QR Code inside Welcome Banner */}
+        {isApproved && (
+          <div className="pt-2 lg:pt-0 self-start sm:self-auto shrink-0">
+            <BannerAttendanceQr
+              participantId={me?.user?.id}
+              fullName={me?.profile?.full_name}
+              participantCode={me?.profile?.participant_code}
+              verificationStatus={me?.profile?.verification_status}
+              todayDate={today}
+              isWorkshopDay={isWorkshopDay}
+              todayRecord={todayRecord}
+              onAttendanceUpdated={() => {
+                void qc.invalidateQueries({ queryKey: ["my_attendance"] });
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* PENDING APPROVAL SCREEN */}
