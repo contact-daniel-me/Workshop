@@ -103,6 +103,12 @@ const AdminDigitalIdDialog = lazy(() =>
     default: m.AdminDigitalIdDialog,
   }))
 );
+const EditParticipantDialog = lazy(() =>
+  import("@/components/admin/EditParticipantDialog").then((m) => ({
+    default: m.EditParticipantDialog,
+  }))
+);
+import type { ParticipantEditableData } from "@/components/admin/EditParticipantDialog";
 import { PhotoCaptureInput } from "@/components/auth/PhotoCaptureInput";
 import { fileToBase64 } from "@/lib/image-validation";
 import { uploadRegistrationPhoto } from "@/lib/lookup.functions";
@@ -199,6 +205,7 @@ function AdminPage() {
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
   const [downloadingBulkPdf, setDownloadingBulkPdf] = useState(false);
   const [esdpBulkDialogOpen, setEsdpBulkDialogOpen] = useState(false);
+  const [editTargetUser, setEditTargetUser] = useState<ParticipantEditableData | null>(null);
 
   const handleDownloadParticipantPdf = async (p: {
     id: string;
@@ -1560,6 +1567,29 @@ function AdminPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-8 w-8 p-0 text-primary hover:text-primary hover:bg-primary/10"
+                                  title="Edit Participant Details"
+                                  onClick={() => {
+                                    const photoPath = adminData?.profiles.find((x) => x.id === p.id)?.photo_path ?? "";
+                                    const photoUrl = p.id ? photoUrls[photoPath] : undefined;
+                                    setEditTargetUser({
+                                      id: p.id,
+                                      full_name: p.full_name,
+                                      participant_code: p.participant_code,
+                                      email: p.email,
+                                      phone: p.phone,
+                                      verification_status: p.verification_status,
+                                      remarks: adminData?.profiles.find((x) => x.id === p.id)?.remarks,
+                                      photo_url: photoUrl,
+                                    });
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   className="h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
                                   title="Digital Participant ID Card"
                                   onClick={() => setDigitalIdTarget(p)}
@@ -2202,6 +2232,27 @@ function AdminPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    className="flex-1 sm:flex-none gap-1.5 text-xs text-primary hover:text-primary border-primary/30 hover:bg-primary/10 font-bold"
+                    onClick={() => {
+                      const photoPath = adminData?.profiles.find((x) => x.id === selectedParticipant.id)?.photo_path ?? "";
+                      const photoUrl = selectedParticipant.id ? photoUrls[photoPath] : undefined;
+                      setEditTargetUser({
+                        id: selectedParticipant.id,
+                        full_name: selectedParticipant.full_name,
+                        participant_code: selectedParticipant.participant_code,
+                        email: selectedParticipant.email,
+                        phone: selectedParticipant.phone,
+                        verification_status: selectedParticipant.verification_status,
+                        remarks: adminData?.profiles.find((x) => x.id === selectedParticipant.id)?.remarks,
+                        photo_url: photoUrl,
+                      });
+                    }}
+                  >
+                    <Edit className="h-3.5 w-3.5" /> Edit Details
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     className="flex-1 sm:flex-none gap-1.5 text-xs text-emerald-700 hover:text-emerald-800 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold"
                     onClick={() => setDigitalIdTarget(selectedParticipant)}
                   >
@@ -2465,6 +2516,27 @@ function AdminPage() {
             onOpenChange={setEsdpBulkDialogOpen}
             onSuccess={() => {
               refetch();
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Edit Participant Details Dialog */}
+      {editTargetUser && (
+        <Suspense fallback={null}>
+          <EditParticipantDialog
+            open={!!editTargetUser}
+            onOpenChange={(isOpen) => {
+              if (!isOpen) setEditTargetUser(null);
+            }}
+            participant={editTargetUser}
+            onSuccess={() => {
+              void refetch().then((res) => {
+                if (selectedParticipant && editTargetUser && selectedParticipant.id === editTargetUser.id) {
+                  const updated = res.data?.participantRows.find((x) => x.id === editTargetUser.id);
+                  if (updated) setSelectedParticipant(updated);
+                }
+              });
             }}
           />
         </Suspense>

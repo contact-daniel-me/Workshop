@@ -858,6 +858,254 @@ export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
     };
   });
 
+/** Staff only: Update a participant's details (name, phone, email, status, remarks, photo, password) */
+export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (input: {
+      targetUserId: string;
+      fullName: string;
+      phone?: string;
+      email?: string;
+      verificationStatus?: "verified" | "pending" | "rejected";
+      remarks?: string;
+      newPassword?: string;
+      photoBase64?: string;
+      removePhoto?: boolean;
+    }) => {
+      const targetUserId = String(input.targetUserId ?? "").trim();
+      if (!targetUserId) throw new Error("Participant ID is required.");
+
+      const fullName = String(input.fullName ?? "").trim();
+      if (!fullName || fullName.length < 2) {
+        throw new Error("Full name must be at least 2 characters.");
+      }
+
+      const rawPhone = String(input.phone ?? "").trim();
+      const phone = rawPhone ? normalizePhone(rawPhone) : undefined;
+      if (phone && !INDIAN_PHONE.test(phone)) {
+        throw new Error("A valid 10-digit mobile number is required.");
+      }
+
+      const rawEmail = String(input.email ?? "").trim().toLowerCase();
+      const email = rawEmail || undefined;
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error("A valid email address is required.");
+      }
+
+      const verificationStatus = input.verificationStatus;
+      const remarks = input.remarks !== undefined ? String(input.remarks).trim().slice(0, 500) : undefined;
+      const newPassword = input.newPassword ? String(input.newPassword).trim() : undefined;
+      if (newPassword && newPassword.length < 6) {
+        throw new Error("New password must be at least 6 characters.");
+      }
+
+      const photoBase64 = input.photoBase64 ? String(input.photoBase64).trim() : undefined;
+      const removePhoto = Boolean(input.removePhoto);
+
+      return {
+        targetUserId,
+        fullName,
+        phone,
+        email,
+        verificationStatus,
+        remarks,
+        newPassword,
+        photoBase64,
+        removePhoto,
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1. Authorize caller
+    const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+    if (!isStaff) throw new Error("Unauthorized: Only administrators can edit participant details.");
+
+    // 2. Fetch existing profile
+    const { data: currentProfile, error: fetchErr } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", data.targetUserId)
+      .maybeSingle();
+
+    if (fetchErr || !currentProfile) {
+      throw new Error("Participant profile not found.");
+    }
+
+    // 3. Uniqueness check against other accounts
+    if (data.phone && data.phone !== currentProfile.phone) {
+      const { data: duplicatePhone } = await supabaseAdmin
+        .from("profiles")
+        .select("id, participant_code")
+        .eq("phone", data.phone)
+        .neq("id", data.targetUserId)
+        .maybeSingle();
+
+      if (duplicatePhone) {
+        throw new Error(`Mobile number ${data.phone} is already registered by another participant (${duplicatePhone.participant_code}).`);
+      }
+    }
+
+    if (data.email && data.email !== currentProfile.email) {
+      const { data: duplicateEmail } = await supabaseAdmin
+        .from("profiles")
+        .select("id, participant_code")
+        .ilike("email", data.email)
+        .neq("id", data.targetUserId)
+        .maybeSingle();
+
+      if (duplicateEmail) {
+        throw new Error(`Email address ${data.email} is already registered by another participant (${duplicateEmail.participant_code}).`);
+      }
+    }
+
+    // 4. Handle photo update or removal if requested
+    let updatedPhotoPath = currentProfile.photo_path;
+
+    if (data.removePhoto) {
+      if (currentProfile.photo_path) {
+        try {
+          await supabaseAdmin.storage.from("photos").remove([currentProfile.photo_path]);
+        } catch {
+          // ignore cleanup error
+        }
+      }
+      updatedPhotoPath = null;
+    } else if (data.photoBase64) {
+      let cleanBase64 = data.photoBase64;
+      if (cleanBase64.includes(",")) {
+        cleanBase64 = cleanBase64.split(",")[1]!;
+      }
+      const photoBuffer = Buffer.from(cleanBase64, "base64");
+      if (photoBuffer.length > 5 * 1024 * 1024) {
+        throw new Error("Photograph exceeds the 5 MB file size limit.");
+      }
+      const { ext, mime } = validateImageMagicBytes(photoBuffer);
+
+      const newPhotoPath = `${data.targetUserId}/profile_${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabaseAdmin.storage
+        .from("photos")
+        .upload(newPhotoPath, photoBuffer, {
+          contentType: mime,
+          upsert: true,
+        });
+
+      if (uploadErr) {
+        throw new Error(`Failed to store photograph: ${uploadErr.message}`);
+      }
+
+      // Remove previous photo if it had one
+      if (currentProfile.photo_path && currentProfile.photo_path !== newPhotoPath) {
+        try {
+          await supabaseAdmin.storage.from("photos").remove([currentProfile.photo_path]);
+        } catch {
+          // ignore cleanup error
+        }
+      }
+
+      updatedPhotoPath = newPhotoPath;
+    }
+
+    // 5. Update profiles record in database
+    const finalPhone = data.phone || currentProfile.phone;
+    const finalEmail = data.email || currentProfile.email;
+    const finalStatus = data.verificationStatus || currentProfile.verification_status;
+    const finalRemarks = data.remarks !== undefined ? data.remarks : currentProfile.remarks;
+
+    const { data: updatedProfile, error: updateErr } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        full_name: data.fullName,
+        phone: finalPhone,
+        email: finalEmail,
+        verification_status: finalStatus,
+        photo_path: updatedPhotoPath,
+        remarks: finalRemarks,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", data.targetUserId)
+      .select("id, participant_code, full_name, phone, email, photo_path, verification_status, remarks, updated_at")
+      .single();
+
+    if (updateErr || !updatedProfile) {
+      throw new Error(`Failed to update profile: ${updateErr?.message || "Unknown error"}`);
+    }
+
+    // 6. Synchronize Auth user metadata and password if provided
+    const authUpdatePayload: Record<string, unknown> = {
+      user_metadata: {
+        full_name: data.fullName,
+        phone: finalPhone,
+        email: finalEmail,
+      },
+    };
+
+    if (data.newPassword) {
+      authUpdatePayload.password = normalizeAppPassword(data.newPassword);
+    }
+
+    // If phone changed, update auth email identifier
+    if (data.phone && data.phone !== currentProfile.phone) {
+      authUpdatePayload.email = phoneToAuthEmail(finalPhone);
+      authUpdatePayload.email_confirm = true;
+    }
+
+    try {
+      await supabaseAdmin.auth.admin.updateUserById(data.targetUserId, authUpdatePayload);
+    } catch (authErr: unknown) {
+      console.warn("Auth user update warning:", authErr);
+    }
+
+    // 7. Write audit log entry
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "admin_update_participant_details",
+      target_user: data.targetUserId,
+      details: {
+        participant_code: updatedProfile.participant_code,
+        changes: {
+          full_name: { old: currentProfile.full_name, new: data.fullName },
+          phone: { old: currentProfile.phone, new: finalPhone },
+          email: { old: currentProfile.email, new: finalEmail },
+          verification_status: { old: currentProfile.verification_status, new: finalStatus },
+          photo_changed: updatedPhotoPath !== currentProfile.photo_path,
+          password_updated: Boolean(data.newPassword),
+        },
+        updated_by: userId,
+        timestamp: new Date().toISOString(),
+      } as never,
+    });
+
+    // 8. Generate signed URL for updated photo if exists
+    let photoUrl: string | null = null;
+    if (updatedPhotoPath) {
+      const { data: signed } = await supabaseAdmin.storage
+        .from("photos")
+        .createSignedUrl(updatedPhotoPath, 3600);
+      photoUrl = signed?.signedUrl ?? null;
+    }
+
+    return {
+      ok: true,
+      participant: {
+        id: updatedProfile.id,
+        fullName: updatedProfile.full_name,
+        participantCode: updatedProfile.participant_code,
+        phone: updatedProfile.phone,
+        email: updatedProfile.email,
+        verificationStatus: updatedProfile.verification_status,
+        remarks: updatedProfile.remarks,
+        photoPath: updatedProfile.photo_path,
+        photoUrl,
+        password: data.newPassword,
+      },
+      message: `Participant ${updatedProfile.participant_code} updated successfully.`,
+    };
+  });
+
 /** Staff only: Delete a participant account with attendance retention audit logging */
 export const adminDeleteParticipant = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

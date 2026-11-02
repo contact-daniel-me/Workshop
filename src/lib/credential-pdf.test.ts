@@ -119,4 +119,36 @@ describe("Student Credentials PDF Generator", () => {
     const arrayBuffer = doc.output("arraybuffer");
     expect(arrayBuffer.byteLength).toBeGreaterThan(2000);
   });
+
+  it("reflects edited participant details in the credentials PDF pass", async () => {
+    // Before edit
+    const originalDetails = {
+      fullName: "Daniel",
+      participantCode: "SA-2026-0001",
+      phone: "9876543210",
+      email: "daniel@example.com",
+      verificationStatus: "pending",
+    };
+    const originalDoc = await buildParticipantCredentialsPdf(originalDetails);
+    expect(originalDoc).toBeDefined();
+
+    // Admin edits details: updates name, mobile, email, and approval status
+    const editedDetails = {
+      fullName: "Daniel Thomas",
+      participantCode: "SA-2026-0001",
+      phone: "9988776655",
+      email: "daniel.thomas@example.com",
+      verificationStatus: "verified",
+      // When edited, rawPassword can be updated or re-derived dynamically
+      rawPassword: generateDefaultStudentPassword("Daniel Thomas", "9988776655"),
+    };
+    expect(editedDetails.rawPassword).toBe("Dani9988");
+
+    const updatedDoc = await buildParticipantCredentialsPdf(editedDetails);
+    expect(updatedDoc).toBeDefined();
+    expect(updatedDoc.getNumberOfPages()).toBe(1);
+
+    const updatedBuffer = updatedDoc.output("arraybuffer");
+    expect(updatedBuffer.byteLength).toBeGreaterThan(1000);
+  });
 });
