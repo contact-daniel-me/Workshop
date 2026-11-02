@@ -10,10 +10,10 @@ create index if not exists attendance_day_status_idx
 create index if not exists attendance_user_status_idx
   on public.attendance (user_id, status);
 
--- 2. Partial index for active, unrevoked QR sessions (Used in get_or_create_participant_qr)
+-- 2. Partial index for active, unrevoked QR sessions (Used in active QR lookups)
 create index if not exists qr_sessions_active_lookup_idx
-  on public.qr_sessions (participant_id, day_date, expires_at desc)
-  where revoked = false and used_at is null;
+  on public.qr_sessions (day_date, expires_at desc)
+  where revoked = false;
 
 -- 3. Composite index for audit logs sorted by action and timestamp
 create index if not exists audit_logs_action_created_idx

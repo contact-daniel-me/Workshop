@@ -628,6 +628,8 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
         user_id: profile.id,
         day_date: today,
         status: "present",
+        morning_status: "present",
+        afternoon_status: "present",
         method: "qr",
         qr_session_id: session.id,
         marked_by: userId,
@@ -924,6 +926,8 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
           user_id: matchedProfile.id,
           day_date: today,
           status: "present",
+          morning_status: "present",
+          afternoon_status: "present",
           method: "qr_selfie", // The DB enum representing biometric face verification
           marked_by: userId,
           remarks: `Verified via Admin Face Recognition Console (${confidence}% confidence)`,

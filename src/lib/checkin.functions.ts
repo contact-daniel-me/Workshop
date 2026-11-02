@@ -144,6 +144,8 @@ export const checkIn = createServerFn({ method: "POST" })
       user_id: userId,
       day_date: today,
       status,
+      morning_status: status === "present" ? "present" : null,
+      afternoon_status: status === "present" ? "present" : null,
       method: settings.require_selfie ? "qr_selfie" : "qr",
       selfie_path: settings.require_selfie ? data.selfiePath : null,
       qr_session_id: session.id,

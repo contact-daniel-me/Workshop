@@ -31,6 +31,7 @@ export const markAttendanceManual = createServerFn({ method: "POST" })
     const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
     if (!staff) throw new Error("Unauthorized: Only administrators can modify attendance manually.");
 
+    const isPresent = data.status === "present";
     const { error } = await supabase
       .from("attendance")
       .upsert(
@@ -38,6 +39,8 @@ export const markAttendanceManual = createServerFn({ method: "POST" })
           user_id: data.userId,
           day_date: data.dayDate,
           status: data.status,
+          morning_status: isPresent ? "present" : null,
+          afternoon_status: isPresent ? "present" : null,
           method: "manual",
           marked_by: userId,
           remarks: data.remarks,
@@ -125,6 +128,8 @@ export const reviewSelfieAttendance = createServerFn({ method: "POST" })
       .from("attendance")
       .update({
         status: newStatus,
+        morning_status: data.approved ? "present" : null,
+        afternoon_status: data.approved ? "present" : null,
         marked_by: userId,
         remarks: data.remarks,
         updated_at: new Date().toISOString(),

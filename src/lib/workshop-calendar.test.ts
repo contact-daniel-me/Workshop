@@ -145,3 +145,4 @@ describe("Workshop Calendar & Holiday Schedule Computation", () => {
     expect(oct31State?.state).toBe("Holiday");
   });
 });
+
