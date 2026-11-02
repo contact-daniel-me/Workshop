@@ -62,6 +62,7 @@ import {
   ScanFace,
   IdCard,
   CalendarCheck,
+  FileDown,
 } from "lucide-react";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { AdminAttendanceManagementTab } from "@/components/admin/AdminAttendanceManagementTab";
@@ -179,9 +180,49 @@ function AdminPage() {
   } | null>(null);
 
   // Participant Management Action Dialogs (Change Password & Delete Participant)
-  const [passwordTargetUser, setPasswordTargetUser] = useState<{ id: string; full_name: string; participant_code: string } | null>(null);
+  const [passwordTargetUser, setPasswordTargetUser] = useState<{
+    id: string;
+    full_name: string;
+    participant_code: string;
+    email?: string;
+    phone?: string;
+    verification_status?: string;
+    photo_url?: string | null;
+  } | null>(null);
   const [deleteTargetUser, setDeleteTargetUser] = useState<{ id: string; full_name: string; participant_code: string; email?: string; phone?: string; photoUrl?: string | null } | null>(null);
   const [digitalIdTarget, setDigitalIdTarget] = useState<ParticipantRow | null>(null);
+  const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
+
+  const handleDownloadParticipantPdf = async (p: {
+    id: string;
+    full_name: string;
+    participant_code: string;
+    email: string;
+    phone: string;
+    verification_status: string;
+  }) => {
+    setDownloadingPdfId(p.id);
+    try {
+      const { downloadParticipantCredentialsPdf } = await import("@/lib/credential-pdf");
+      const photoPath = adminData?.profiles.find((x) => x.id === p.id)?.photo_path ?? "";
+      const photoUrl = p.id ? photoUrls[photoPath] : undefined;
+      await downloadParticipantCredentialsPdf({
+        fullName: p.full_name,
+        participantCode: p.participant_code,
+        email: p.email,
+        phone: p.phone,
+        verificationStatus: p.verification_status,
+        photoUrl: photoUrl,
+        portalUrl: typeof window !== "undefined" ? `${window.location.origin}/auth` : "/auth",
+        workshopName: "Event Management Portal",
+      });
+      toast.success(`Credentials PDF pass for ${p.full_name} downloaded successfully!`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate PDF pass.");
+    } finally {
+      setDownloadingPdfId(null);
+    }
+  };
   const [adminPhotoModalOpen, setAdminPhotoModalOpen] = useState(false);
   const [adminPhotoTargetUser, setAdminPhotoTargetUser] = useState<{ id: string; full_name: string } | null>(null);
   const [adminSelectedPhoto, setAdminSelectedPhoto] = useState<File | null>(null);
@@ -1464,6 +1505,21 @@ function AdminPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-8 w-8 p-0 text-teal-600 hover:text-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950/40"
+                                  title="Download Credentials PDF Pass"
+                                  disabled={downloadingPdfId === p.id}
+                                  onClick={() => handleDownloadParticipantPdf(p)}
+                                >
+                                  {downloadingPdfId === p.id ? (
+                                    <RotateCw className="h-4 w-4 animate-spin text-teal-600" />
+                                  ) : (
+                                    <FileDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
                                   title="Change Password"
                                   onClick={() =>
@@ -1471,6 +1527,10 @@ function AdminPage() {
                                       id: p.id,
                                       full_name: p.full_name,
                                       participant_code: p.participant_code,
+                                      email: p.email,
+                                      phone: p.phone,
+                                      verification_status: p.verification_status,
+                                      photo_url: p.id ? photoUrls[adminData?.profiles.find((x) => x.id === p.id)?.photo_path ?? ""] : undefined,
                                     })
                                   }
                                 >
@@ -2085,12 +2145,32 @@ function AdminPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    disabled={downloadingPdfId === selectedParticipant.id}
+                    className="flex-1 sm:flex-none gap-1.5 text-xs text-teal-700 hover:text-teal-800 border-teal-300 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950/40 font-semibold"
+                    onClick={() => handleDownloadParticipantPdf(selectedParticipant)}
+                  >
+                    {downloadingPdfId === selectedParticipant.id ? (
+                      <RotateCw className="h-3.5 w-3.5 animate-spin text-teal-600" />
+                    ) : (
+                      <FileDown className="h-3.5 w-3.5 text-teal-600" />
+                    )}
+                    Download Pass PDF
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     className="flex-1 sm:flex-none gap-1.5 text-xs text-amber-700 hover:text-amber-800 border-amber-300"
                     onClick={() => {
                       setPasswordTargetUser({
                         id: selectedParticipant.id,
                         full_name: selectedParticipant.full_name,
                         participant_code: selectedParticipant.participant_code,
+                        email: selectedParticipant.email,
+                        phone: selectedParticipant.phone,
+                        verification_status: selectedParticipant.verification_status,
+                        photo_url: selectedParticipant.id
+                          ? photoUrls[adminData?.profiles.find((x) => x.id === selectedParticipant.id)?.photo_path ?? ""]
+                          : undefined,
                       });
                     }}
                   >

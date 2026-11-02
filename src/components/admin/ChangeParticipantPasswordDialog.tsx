@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Lock, Eye, EyeOff, KeyRound, Check, RefreshCw, AlertCircle, Copy, ShieldAlert } from "lucide-react";
+import { Lock, Eye, EyeOff, KeyRound, Check, RefreshCw, AlertCircle, Copy, ShieldAlert, FileDown } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props {
@@ -15,6 +15,10 @@ interface Props {
     id: string;
     full_name: string;
     participant_code: string;
+    email?: string;
+    phone?: string;
+    verification_status?: string;
+    photo_url?: string | null;
   } | null;
   onSuccess?: () => void;
 }
@@ -145,16 +149,44 @@ export function ChangeParticipantPasswordDialog({
             <div className="rounded-lg border border-primary/30 bg-primary/5 p-2.5 text-xs space-y-1">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-primary">Temporary Password:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(generatedTemp);
-                    toast.success("Copied to clipboard!");
-                  }}
-                  className="text-primary hover:underline flex items-center gap-1 font-medium"
-                >
-                  <Copy className="h-3 w-3" /> Copy
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const { downloadParticipantCredentialsPdf } = await import("@/lib/credential-pdf");
+                        await downloadParticipantCredentialsPdf({
+                          fullName: participant.full_name,
+                          participantCode: participant.participant_code,
+                          email: participant.email || "Registered Email",
+                          phone: participant.phone || "Registered Mobile",
+                          rawPassword: generatedTemp,
+                          verificationStatus: participant.verification_status || "verified",
+                          photoUrl: participant.photo_url,
+                          portalUrl: typeof window !== "undefined" ? `${window.location.origin}/auth` : "/auth",
+                          workshopName: "Event Management Portal",
+                        });
+                        toast.success("Credentials PDF downloaded!");
+                      } catch (err: unknown) {
+                        toast.error(err instanceof Error ? err.message : "Failed to download PDF.");
+                      }
+                    }}
+                    className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 font-medium"
+                    title="Download Pass as PDF"
+                  >
+                    <FileDown className="h-3 w-3" /> PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(generatedTemp);
+                      toast.success("Copied to clipboard!");
+                    }}
+                    className="text-primary hover:underline flex items-center gap-1 font-medium"
+                  >
+                    <Copy className="h-3 w-3" /> Copy
+                  </button>
+                </div>
               </div>
               <p className="font-mono text-sm font-bold text-foreground bg-white/60 dark:bg-black/40 px-2 py-1 rounded">
                 {generatedTemp}

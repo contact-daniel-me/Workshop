@@ -38,10 +38,12 @@ import {
   ShieldCheck,
   Clock,
   AlertCircle,
+  FileDown,
 } from "lucide-react";
 import { registerParticipantByAdmin } from "@/lib/admin.functions";
 import { validateClientImageFile, fileToBase64, optimizeImageFile } from "@/lib/image-validation";
 import { normalizePhone, INDIAN_PHONE } from "@/lib/attendance";
+import { downloadParticipantCredentialsPdf } from "@/lib/credential-pdf";
 
 interface RegisterParticipantDialogProps {
   open: boolean;
@@ -124,6 +126,7 @@ export function RegisterParticipantDialog({
   } | null>(null);
 
   const [copied, setCopied] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const resetForm = () => {
     setFullName("");
@@ -276,6 +279,29 @@ export function RegisterParticipantDialog({
     setCopied(true);
     toast.success("Credentials copied to clipboard!");
     setTimeout(() => setCopied(false), 3000);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!createdParticipant) return;
+    setDownloadingPdf(true);
+    try {
+      await downloadParticipantCredentialsPdf({
+        fullName: createdParticipant.fullName,
+        participantCode: createdParticipant.participantCode,
+        email: createdParticipant.email,
+        phone: createdParticipant.phone,
+        rawPassword: createdParticipant.rawPassword,
+        verificationStatus: createdParticipant.verificationStatus,
+        photoUrl: createdParticipant.photoUrl,
+        portalUrl: typeof window !== "undefined" ? `${window.location.origin}/auth` : "/auth",
+        workshopName: "Event Management Portal",
+      });
+      toast.success("Credentials PDF pass downloaded successfully!");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate PDF credentials pass.");
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
 
   return (
@@ -602,18 +628,36 @@ export function RegisterParticipantDialog({
                     <code className="font-mono text-sm font-bold text-foreground tracking-wide select-all">
                       {createdParticipant.rawPassword}
                     </code>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(createdParticipant.rawPassword);
-                        toast.success("Password copied!");
-                      }}
-                      className="h-7 text-xs gap-1 text-primary hover:text-primary"
-                    >
-                      <Copy className="h-3 w-3" /> Copy
-                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDownloadPdf}
+                        disabled={downloadingPdf}
+                        className="h-7 text-xs gap-1 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/50"
+                        title="Download Credentials PDF Pass"
+                      >
+                        {downloadingPdf ? (
+                          <RefreshCw className="h-3 w-3 animate-spin text-emerald-600" />
+                        ) : (
+                          <FileDown className="h-3 w-3 text-emerald-600" />
+                        )}
+                        <span>{downloadingPdf ? "PDF…" : "PDF"}</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(createdParticipant.rawPassword);
+                          toast.success("Password copied!");
+                        }}
+                        className="h-7 text-xs gap-1 text-primary hover:text-primary"
+                      >
+                        <Copy className="h-3 w-3" /> Copy
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -628,6 +672,20 @@ export function RegisterParticipantDialog({
             </div>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadPdf}
+                disabled={downloadingPdf}
+                className="w-full sm:w-auto gap-1.5 font-semibold text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+              >
+                {downloadingPdf ? (
+                  <RefreshCw className="h-4 w-4 animate-spin text-emerald-600" />
+                ) : (
+                  <FileDown className="h-4 w-4 text-emerald-600" />
+                )}
+                {downloadingPdf ? "Generating PDF…" : "Download PDF Pass"}
+              </Button>
               <Button
                 type="button"
                 variant="outline"
