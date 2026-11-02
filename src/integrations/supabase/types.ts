@@ -21,6 +21,8 @@ export type Database = {
           id: string
           marked_by: string | null
           method: Database["public"]["Enums"]["att_method"]
+          morning_status: string | null
+          afternoon_status: string | null
           qr_session_id: string | null
           remarks: string | null
           selfie_path: string | null
@@ -34,6 +36,8 @@ export type Database = {
           id?: string
           marked_by?: string | null
           method: Database["public"]["Enums"]["att_method"]
+          morning_status?: string | null
+          afternoon_status?: string | null
           qr_session_id?: string | null
           remarks?: string | null
           selfie_path?: string | null
@@ -47,6 +51,8 @@ export type Database = {
           id?: string
           marked_by?: string | null
           method?: Database["public"]["Enums"]["att_method"]
+          morning_status?: string | null
+          afternoon_status?: string | null
           qr_session_id?: string | null
           remarks?: string | null
           selfie_path?: string | null

@@ -132,6 +132,8 @@ export function useAdminData() {
             checked_in_at: a.checked_in_at,
             method: a.method,
             remarks: a.remarks,
+            morning_status: a.morning_status ?? null,
+            afternoon_status: a.afternoon_status ?? null,
           };
         });
         return {
@@ -140,6 +142,7 @@ export function useAdminData() {
           full_name: p.full_name,
           phone: p.phone,
           email: p.email,
+          photo_path: p.photo_path,
           verification_status: p.verification_status,
           summary,
           rawAttendance,

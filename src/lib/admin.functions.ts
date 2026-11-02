@@ -637,4 +637,355 @@ export const adminDeleteParticipant = createServerFn({ method: "POST" })
     };
   });
 
+export type ManualSessionAction =
+  | "mark_morning"
+  | "mark_afternoon"
+  | "mark_both"
+  | "clear_morning"
+  | "clear_afternoon"
+  | "reset_both";
+
+export type BulkSessionAction =
+  | "mark_all_morning"
+  | "mark_all_afternoon"
+  | "mark_all_both"
+  | "clear_all_morning"
+  | "clear_all_afternoon"
+  | "reset_all_both";
+
+/** Staff only: Manually manage individual participant session attendance (Morning / Afternoon / Both / Reset) */
+export const adminManualAttendanceAction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (input: {
+      userId: string;
+      dayDate: string;
+      action: ManualSessionAction;
+      reason?: string;
+    }) => {
+      const allowedActions: ManualSessionAction[] = [
+        "mark_morning",
+        "mark_afternoon",
+        "mark_both",
+        "clear_morning",
+        "clear_afternoon",
+        "reset_both",
+      ];
+      if (!allowedActions.includes(input.action)) {
+        throw new Error(`Invalid manual attendance action: ${input.action}`);
+      }
+      return {
+        userId: String(input.userId).trim(),
+        dayDate: String(input.dayDate).trim(),
+        action: input.action,
+        reason: input.reason ? String(input.reason).trim() : undefined,
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can modify attendance.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Fetch existing attendance record
+    const { data: existing } = await supabaseAdmin
+      .from("attendance")
+      .select("*")
+      .eq("user_id", data.userId)
+      .eq("day_date", data.dayDate)
+      .maybeSingle();
+
+    const prevMorning = existing?.morning_status ?? (existing?.status === "present" ? "present" : null);
+    const prevAfternoon = existing?.afternoon_status ?? (existing?.status === "present" ? "present" : null);
+    const prevStatus = existing?.status ?? null;
+
+    let newMorning: string | null = prevMorning;
+    let newAfternoon: string | null = prevAfternoon;
+    let shouldDelete = false;
+
+    switch (data.action) {
+      case "mark_morning":
+        newMorning = "present";
+        break;
+      case "mark_afternoon":
+        newAfternoon = "present";
+        break;
+      case "mark_both":
+        newMorning = "present";
+        newAfternoon = "present";
+        break;
+      case "clear_morning":
+        newMorning = null;
+        if (!newAfternoon) shouldDelete = true;
+        break;
+      case "clear_afternoon":
+        newAfternoon = null;
+        if (!newMorning) shouldDelete = true;
+        break;
+      case "reset_both":
+        newMorning = null;
+        newAfternoon = null;
+        shouldDelete = true;
+        break;
+    }
+
+    if (shouldDelete) {
+      if (existing) {
+        const { error: delErr } = await supabaseAdmin
+          .from("attendance")
+          .delete()
+          .eq("user_id", data.userId)
+          .eq("day_date", data.dayDate);
+        if (delErr) throw new Error(`Failed to reset attendance: ${delErr.message}`);
+      }
+    } else {
+      const nowIso = new Date().toISOString();
+      const remarks = data.reason || `Admin manual override (${data.action})`;
+      const { error: upsertErr } = await supabaseAdmin
+        .from("attendance")
+        .upsert(
+          {
+            user_id: data.userId,
+            day_date: data.dayDate,
+            status: "present",
+            morning_status: newMorning,
+            afternoon_status: newAfternoon,
+            method: "manual",
+            marked_by: userId,
+            remarks,
+            updated_at: nowIso,
+          },
+          { onConflict: "user_id,day_date" },
+        );
+      if (upsertErr) throw new Error(`Failed to update attendance: ${upsertErr.message}`);
+    }
+
+    // Record audit log
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "attendance_manual_action",
+      target_user: data.userId,
+      details: {
+        dayDate: data.dayDate,
+        action: data.action,
+        previousStatus: prevStatus,
+        previousMorning: prevMorning,
+        previousAfternoon: prevAfternoon,
+        newMorning,
+        newAfternoon,
+        reason: data.reason ?? null,
+        timestamp: new Date().toISOString(),
+      } as never,
+    });
+
+    return {
+      ok: true,
+      message: `Successfully executed ${data.action.replace("_", " ")} for participant.`,
+    };
+  });
+
+/** Staff only: Manually manage bulk session attendance for all or selected participants */
+export const adminBulkAttendanceAction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (input: {
+      dayDate: string;
+      action: BulkSessionAction;
+      targetUserIds?: string[];
+      reason?: string;
+    }) => {
+      const allowedActions: BulkSessionAction[] = [
+        "mark_all_morning",
+        "mark_all_afternoon",
+        "mark_all_both",
+        "clear_all_morning",
+        "clear_all_afternoon",
+        "reset_all_both",
+      ];
+      if (!allowedActions.includes(input.action)) {
+        throw new Error(`Invalid bulk attendance action: ${input.action}`);
+      }
+      return {
+        dayDate: String(input.dayDate).trim(),
+        action: input.action,
+        targetUserIds: input.targetUserIds ? input.targetUserIds.map((id) => String(id).trim()) : undefined,
+        reason: input.reason ? String(input.reason).trim() : undefined,
+      };
+    },
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can execute bulk attendance changes.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Fetch target profiles (verified participants)
+    let query = supabaseAdmin
+      .from("profiles")
+      .select("id, participant_code, full_name")
+      .eq("verification_status", "verified");
+
+    if (data.targetUserIds && data.targetUserIds.length > 0) {
+      query = query.in("id", data.targetUserIds);
+    }
+
+    const { data: profiles, error: profErr } = await query;
+    if (profErr) throw new Error(`Failed to load target participants: ${profErr.message}`);
+    if (!profiles || profiles.length === 0) {
+      return { ok: true, count: 0, message: "No eligible participants found for this operation." };
+    }
+
+    const targetIds = profiles.map((p) => p.id);
+
+    // Fetch existing attendance records for target participants on this date
+    const { data: existingList, error: fetchAttErr } = await supabaseAdmin
+      .from("attendance")
+      .select("*")
+      .in("user_id", targetIds)
+      .eq("day_date", data.dayDate);
+
+    if (fetchAttErr) throw new Error(`Failed to fetch current attendance records: ${fetchAttErr.message}`);
+
+    const existingByUserId = new Map<string, any>();
+    (existingList ?? []).forEach((r) => existingByUserId.set(r.user_id, r));
+
+    const upsertRows: any[] = [];
+    const deleteUserIds: string[] = [];
+    const nowIso = new Date().toISOString();
+    const defaultReason = data.reason || `Admin bulk override (${data.action})`;
+
+    for (const p of profiles) {
+      const existing = existingByUserId.get(p.id);
+      const prevMorning = existing?.morning_status ?? (existing?.status === "present" ? "present" : null);
+      const prevAfternoon = existing?.afternoon_status ?? (existing?.status === "present" ? "present" : null);
+
+      let newMorning: string | null = prevMorning;
+      let newAfternoon: string | null = prevAfternoon;
+      let shouldDelete = false;
+
+      switch (data.action) {
+        case "mark_all_morning":
+          newMorning = "present";
+          break;
+        case "mark_all_afternoon":
+          newAfternoon = "present";
+          break;
+        case "mark_all_both":
+          newMorning = "present";
+          newAfternoon = "present";
+          break;
+        case "clear_all_morning":
+          newMorning = null;
+          if (!newAfternoon) shouldDelete = true;
+          break;
+        case "clear_all_afternoon":
+          newAfternoon = null;
+          if (!newMorning) shouldDelete = true;
+          break;
+        case "reset_all_both":
+          newMorning = null;
+          newAfternoon = null;
+          shouldDelete = true;
+          break;
+      }
+
+      if (shouldDelete) {
+        if (existing) {
+          deleteUserIds.push(p.id);
+        }
+      } else {
+        upsertRows.push({
+          user_id: p.id,
+          day_date: data.dayDate,
+          status: "present",
+          morning_status: newMorning,
+          afternoon_status: newAfternoon,
+          method: "manual",
+          marked_by: userId,
+          remarks: defaultReason,
+          updated_at: nowIso,
+        });
+      }
+    }
+
+    // Execute bulk deletes if any
+    if (deleteUserIds.length > 0) {
+      const { error: delErr } = await supabaseAdmin
+        .from("attendance")
+        .delete()
+        .in("user_id", deleteUserIds)
+        .eq("day_date", data.dayDate);
+      if (delErr) throw new Error(`Bulk reset failed: ${delErr.message}`);
+    }
+
+    // Execute bulk upserts if any
+    if (upsertRows.length > 0) {
+      const { error: upsertErr } = await supabaseAdmin
+        .from("attendance")
+        .upsert(upsertRows, { onConflict: "user_id,day_date" });
+      if (upsertErr) throw new Error(`Bulk attendance update failed: ${upsertErr.message}`);
+    }
+
+    const affectedCount = targetIds.length;
+
+    // Operation-level audit record
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "attendance_bulk_action",
+      details: {
+        dayDate: data.dayDate,
+        action: data.action,
+        affectedCount,
+        targetUserIdsCount: targetIds.length,
+        isSelective: Boolean(data.targetUserIds && data.targetUserIds.length > 0),
+        reason: data.reason ?? null,
+        timestamp: nowIso,
+      } as never,
+    });
+
+    return {
+      ok: true,
+      count: affectedCount,
+      message: `Bulk operation '${data.action.replace(/_/g, " ")}' successfully completed for ${affectedCount} participants on ${data.dayDate}.`,
+    };
+  });
+
+/** Staff only: Retrieve attendance audit history logs */
+export const getAttendanceAuditHistory = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: { dayDate?: string; limit?: number }) => ({
+    dayDate: input.dayDate ? String(input.dayDate).trim() : undefined,
+    limit: input.limit ? Math.min(200, Math.max(1, Number(input.limit))) : 50,
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can view audit history.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: logs, error } = await supabaseAdmin
+      .from("audit_logs")
+      .select("id, actor_id, action, target_user, details, created_at")
+      .in("action", [
+        "attendance_manual_action",
+        "attendance_bulk_action",
+        "attendance_manual_marked",
+        "attendance_confirmed_qr_scan",
+        "attendance_confirmed_face_verification",
+      ])
+      .order("created_at", { ascending: false })
+      .limit(data.limit);
+
+    if (error) throw new Error(error.message);
+
+    return {
+      logs: logs ?? [],
+    };
+  });
+
+
 

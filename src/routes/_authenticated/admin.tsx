@@ -61,11 +61,13 @@ import {
   Trash2,
   ScanFace,
   IdCard,
+  CalendarCheck,
 } from "lucide-react";
 import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
 import { AdminQrScannerDialog } from "@/components/admin/AdminQrScannerDialog";
 import { AdminFaceRecognitionDialog } from "@/components/admin/AdminFaceRecognitionDialog";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
+import { AdminAttendanceManagementTab } from "@/components/admin/AdminAttendanceManagementTab";
 import { ChangeParticipantPasswordDialog } from "@/components/admin/ChangeParticipantPasswordDialog";
 import { DeleteParticipantDialog } from "@/components/admin/DeleteParticipantDialog";
 import { AdminDigitalIdDialog } from "@/components/id-card/AdminDigitalIdDialog";
@@ -641,6 +643,7 @@ function AdminPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="scanner">🛡️ Attendance Verification Console</SelectItem>
+              <SelectItem value="attendance_management">📋 Attendance Management</SelectItem>
               <SelectItem value="overview">📊 Overview & Analytics</SelectItem>
               <SelectItem value="daily">📅 Daily Attendance</SelectItem>
               <SelectItem value="qr">📺 Projector QR</SelectItem>
@@ -653,9 +656,12 @@ function AdminPage() {
         </div>
 
         {/* Tab Pills Bar (Always starts from left, smoothly scrollable on mobile, grid on tablet/desktop) */}
-        <TabsList className="flex w-full overflow-x-auto justify-start items-center sm:grid sm:grid-cols-4 lg:grid-cols-7 h-auto p-1.5 bg-muted/60 gap-1 rounded-xl border">
+        <TabsList className="flex w-full overflow-x-auto justify-start items-center sm:grid sm:grid-cols-4 lg:grid-cols-8 h-auto p-1.5 bg-muted/60 gap-1 rounded-xl border">
           <TabsTrigger value="scanner" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-bold text-primary">
             <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Verification Console
+          </TabsTrigger>
+          <TabsTrigger value="attendance_management" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+            <CalendarCheck className="h-3.5 w-3.5 text-emerald-600" /> Attendance Management
           </TabsTrigger>
           <TabsTrigger value="overview" className="shrink-0 whitespace-nowrap gap-1.5 py-2 px-3 text-xs font-semibold">
             <BarChart3 className="h-3.5 w-3.5" /> Overview
@@ -692,6 +698,17 @@ function AdminPage() {
             onModeChange={setVerificationMode}
             isTabActive={!qrScannerDialogOpen && !faceRecognitionDialogOpen && activeTab === "scanner"}
             cameraTrigger={cameraTrigger}
+          />
+        </TabsContent>
+
+        {/* TAB: ATTENDANCE MANAGEMENT (Manual Session Override, Bulk Management, Calendar Integration & Reset) */}
+        <TabsContent value="attendance_management" className="space-y-6">
+          <AdminAttendanceManagementTab
+            settings={settings}
+            participantRows={adminData?.participantRows}
+            photoUrls={photoUrls}
+            onAttendanceUpdated={() => void refetch()}
+            initialDate={dailyDate}
           />
         </TabsContent>
 

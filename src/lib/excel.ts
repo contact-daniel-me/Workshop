@@ -7,9 +7,17 @@ export interface ParticipantRow {
   full_name: string;
   phone: string;
   email: string;
+  photo_path?: string | null;
   verification_status: "pending" | "verified" | "rejected";
   summary: Summary;
-  rawAttendance: Record<string, { status: string; checked_in_at: string; method: string; remarks?: string | null }>;
+  rawAttendance: Record<string, {
+    status: string;
+    checked_in_at: string;
+    method: string;
+    remarks?: string | null;
+    morning_status?: string | null;
+    afternoon_status?: string | null;
+  }>;
 }
 
 /** Styling helpers for professional spreadsheets */

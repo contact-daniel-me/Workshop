@@ -86,6 +86,57 @@ export function dayState(day: string, today: string, status?: AttStatus | null):
   return "Not Held";
 }
 
+export type SessionSlot = "morning" | "afternoon" | "both";
+
+export interface SessionAttendanceInfo {
+  morning: boolean;
+  afternoon: boolean;
+  overall: "present" | "incomplete" | "absent" | "pending" | "excused";
+}
+
+/**
+ * Resolves session-wise attendance (Morning / Afternoon / Overall).
+ * Handles explicit session flags as well as legacy / QR records.
+ */
+export function resolveSessionAttendance(att?: {
+  status?: string | null;
+  morning_status?: string | null;
+  afternoon_status?: string | null;
+  method?: string | null;
+} | null): SessionAttendanceInfo {
+  if (!att || !att.status) {
+    return { morning: false, afternoon: false, overall: "absent" };
+  }
+
+  if (att.status === "pending") {
+    return { morning: false, afternoon: false, overall: "pending" };
+  }
+  if (att.status === "excused") {
+    return { morning: false, afternoon: false, overall: "excused" };
+  }
+  if (att.status !== "present") {
+    return { morning: false, afternoon: false, overall: "absent" };
+  }
+
+  // Check explicit morning / afternoon flags
+  const hasMorning = att.morning_status === "present";
+  const hasAfternoon = att.afternoon_status === "present";
+
+  // If neither flag was explicitly configured, but record status is present (legacy or standard check-in):
+  if (att.morning_status == null && att.afternoon_status == null) {
+    return { morning: true, afternoon: true, overall: "present" };
+  }
+
+  if (hasMorning && hasAfternoon) {
+    return { morning: true, afternoon: true, overall: "present" };
+  }
+  if (hasMorning || hasAfternoon) {
+    return { morning: hasMorning, afternoon: hasAfternoon, overall: "incomplete" };
+  }
+
+  return { morning: false, afternoon: false, overall: "absent" };
+}
+
 export interface Summary {
   present: number;
   absent: number;

@@ -7,6 +7,7 @@ import {
   getKolkataTime,
   getNextSessionUnlockTime,
   SESSION_START_HOUR,
+  resolveSessionAttendance,
 } from "./attendance";
 import { generate30DayWorkbook, generateDailyReportWorkbook } from "./excel";
 
@@ -98,5 +99,89 @@ describe("excel export generation", () => {
     ]);
     expect(bytes).toBeInstanceOf(Uint8Array);
     expect(bytes.length).toBeGreaterThan(500);
+  });
+});
+
+describe("resolveSessionAttendance", () => {
+  it("resolves null/undefined attendance to absent", () => {
+    expect(resolveSessionAttendance(null)).toEqual({
+      morning: false,
+      afternoon: false,
+      overall: "absent",
+    });
+    expect(resolveSessionAttendance(undefined)).toEqual({
+      morning: false,
+      afternoon: false,
+      overall: "absent",
+    });
+  });
+
+  it("resolves legacy or QR check-in without explicit session flags to both present", () => {
+    const res = resolveSessionAttendance({
+      status: "present",
+      morning_status: null,
+      afternoon_status: null,
+      method: "qr",
+    });
+    expect(res).toEqual({
+      morning: true,
+      afternoon: true,
+      overall: "present",
+    });
+  });
+
+  it("resolves morning only present as incomplete", () => {
+    const res = resolveSessionAttendance({
+      status: "present",
+      morning_status: "present",
+      afternoon_status: null,
+      method: "manual",
+    });
+    expect(res).toEqual({
+      morning: true,
+      afternoon: false,
+      overall: "incomplete",
+    });
+  });
+
+  it("resolves afternoon only present as incomplete", () => {
+    const res = resolveSessionAttendance({
+      status: "present",
+      morning_status: null,
+      afternoon_status: "present",
+      method: "manual",
+    });
+    expect(res).toEqual({
+      morning: false,
+      afternoon: true,
+      overall: "incomplete",
+    });
+  });
+
+  it("resolves both sessions explicitly present as present", () => {
+    const res = resolveSessionAttendance({
+      status: "present",
+      morning_status: "present",
+      afternoon_status: "present",
+      method: "manual",
+    });
+    expect(res).toEqual({
+      morning: true,
+      afternoon: true,
+      overall: "present",
+    });
+  });
+
+  it("resolves pending and excused correctly", () => {
+    expect(resolveSessionAttendance({ status: "pending" })).toEqual({
+      morning: false,
+      afternoon: false,
+      overall: "pending",
+    });
+    expect(resolveSessionAttendance({ status: "excused" })).toEqual({
+      morning: false,
+      afternoon: false,
+      overall: "excused",
+    });
   });
 });
