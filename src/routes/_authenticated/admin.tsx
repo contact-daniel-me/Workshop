@@ -193,6 +193,7 @@ function AdminPage() {
   const [deleteTargetUser, setDeleteTargetUser] = useState<{ id: string; full_name: string; participant_code: string; email?: string; phone?: string; photoUrl?: string | null } | null>(null);
   const [digitalIdTarget, setDigitalIdTarget] = useState<ParticipantRow | null>(null);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
+  const [downloadingBulkPdf, setDownloadingBulkPdf] = useState(false);
 
   const handleDownloadParticipantPdf = async (p: {
     id: string;
@@ -651,8 +652,6 @@ function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to export filtered report.");
     }
   };
-
-  const [downloadingBulkPdf, setDownloadingBulkPdf] = useState(false);
 
   const handleDownloadBulkPdf = async () => {
     if (!filteredParticipants.length) {
