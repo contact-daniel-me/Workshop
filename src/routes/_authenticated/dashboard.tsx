@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSettings, useMyAttendance, signedUrls } from "@/lib/use-me";
 import { todayLocal, workshopDays, addDays } from "@/lib/attendance";
 import { generateIndividualReportWorkbook, downloadExcelFile } from "@/lib/excel";
@@ -80,6 +81,30 @@ function DashboardPage() {
       setPhotoUrl(null);
     }
   }, [me?.profile?.photo_path]);
+
+  // Realtime subscription: instantaneously reflect attendance changes on participant dashboard
+  useEffect(() => {
+    if (!me?.user?.id) return;
+    const channel = supabase
+      .channel(`user-attendance-live-${me.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "attendance",
+          filter: `user_id=eq.${me.user.id}`,
+        },
+        () => {
+          void qc.invalidateQueries({ queryKey: ["my_attendance"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [me?.user?.id, qc]);
 
   const handleSavePhoto = async () => {
     if (!selectedPhoto || !me?.user?.id) return;

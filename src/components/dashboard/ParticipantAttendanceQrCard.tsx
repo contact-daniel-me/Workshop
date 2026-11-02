@@ -216,6 +216,13 @@ export function ParticipantAttendanceQrCard({
     void fetchDailyQr();
   }, [fetchDailyQr]);
 
+  // Immediately re-sync when attendance is marked present
+  useEffect(() => {
+    if (todayRecord?.status === "present" && !qrData?.alreadyMarked) {
+      void fetchDailyQr();
+    }
+  }, [todayRecord?.status, qrData?.alreadyMarked, fetchDailyQr]);
+
   const isAlreadyPresent =
     todayRecord?.status === "present" || qrData?.code === "ALREADY_PRESENT" || qrData?.alreadyMarked;
   const isLockedUntilNoon = qrData?.code === "LOCKED_UNTIL_SESSION_TIME";

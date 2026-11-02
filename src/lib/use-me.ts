@@ -60,7 +60,13 @@ export function useMyAttendance() {
   return useQuery({
     queryKey: ["my_attendance", me?.user?.id],
     enabled: !!me?.user?.id && !!settings,
-    staleTime: 30_000, // 30 seconds fresh
+    staleTime: 4_000,
+    refetchInterval: (query) => {
+      const today = todayLocal();
+      const records = query.state.data?.records;
+      const isPresentToday = records?.some((r) => r.day_date === today && r.status === "present");
+      return isPresentToday ? 30_000 : 4_000;
+    },
     gcTime: 5 * 60_000,
     queryFn: async () => {
       if (!me?.user?.id || !settings) return null;
