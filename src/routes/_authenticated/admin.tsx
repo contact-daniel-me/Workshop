@@ -1579,7 +1579,7 @@ function AdminPage() {
                                       email: p.email,
                                       phone: p.phone,
                                       verification_status: p.verification_status,
-                                      remarks: adminData?.profiles.find((x) => x.id === p.id)?.remarks,
+                                      remarks: undefined,
                                       photo_url: photoUrl,
                                     });
                                   }}
@@ -2243,7 +2243,7 @@ function AdminPage() {
                         email: selectedParticipant.email,
                         phone: selectedParticipant.phone,
                         verification_status: selectedParticipant.verification_status,
-                        remarks: adminData?.profiles.find((x) => x.id === selectedParticipant.id)?.remarks,
+                        remarks: undefined,
                         photo_url: photoUrl,
                       });
                     }}

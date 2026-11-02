@@ -397,13 +397,9 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
       // 5. Update profile with administrator-selected verification status and optional photo_path
       const updatePayload: Record<string, unknown> = {
         verification_status: data.verificationStatus,
-        updated_at: new Date().toISOString(),
       };
       if (photoPath) {
         updatePayload.photo_path = photoPath;
-      }
-      if (data.remarks) {
-        updatePayload.remarks = data.remarks;
       }
 
       const { data: updatedProfile, error: profileError } = await supabaseAdmin
@@ -702,8 +698,6 @@ export const bulkRegisterParticipantsAdmin = createServerFn({ method: "POST" })
           .from("profiles")
           .update({
             verification_status: "verified",
-            remarks: remarkParts.join(" | "),
-            updated_at: new Date().toISOString(),
           })
           .eq("id", newUserId)
           .select("participant_code")
@@ -865,13 +859,13 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
     (input: {
       targetUserId: string;
       fullName: string;
-      phone?: string;
-      email?: string;
-      verificationStatus?: "verified" | "pending" | "rejected";
-      remarks?: string;
-      newPassword?: string;
-      photoBase64?: string;
-      removePhoto?: boolean;
+      phone?: string | undefined;
+      email?: string | undefined;
+      verificationStatus?: "verified" | "pending" | "rejected" | undefined;
+      remarks?: string | undefined;
+      newPassword?: string | undefined;
+      photoBase64?: string | undefined;
+      removePhoto?: boolean | undefined;
     }) => {
       const targetUserId = String(input.targetUserId ?? "").trim();
       if (!targetUserId) throw new Error("Participant ID is required.");
@@ -1009,11 +1003,10 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
       updatedPhotoPath = newPhotoPath;
     }
 
-    // 5. Update profiles record in database
+    // 5. Update profiles record in database (only updating columns present on public.profiles)
     const finalPhone = data.phone || currentProfile.phone;
     const finalEmail = data.email || currentProfile.email;
     const finalStatus = data.verificationStatus || currentProfile.verification_status;
-    const finalRemarks = data.remarks !== undefined ? data.remarks : currentProfile.remarks;
 
     const { data: updatedProfile, error: updateErr } = await supabaseAdmin
       .from("profiles")
@@ -1023,11 +1016,9 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
         email: finalEmail,
         verification_status: finalStatus,
         photo_path: updatedPhotoPath,
-        remarks: finalRemarks,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", data.targetUserId)
-      .select("id, participant_code, full_name, phone, email, photo_path, verification_status, remarks, updated_at")
+      .select("id, participant_code, full_name, phone, email, photo_path, verification_status")
       .single();
 
     if (updateErr || !updatedProfile) {
@@ -1040,6 +1031,7 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
         full_name: data.fullName,
         phone: finalPhone,
         email: finalEmail,
+        remarks: data.remarks || undefined,
       },
     };
 
@@ -1071,6 +1063,7 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
           phone: { old: currentProfile.phone, new: finalPhone },
           email: { old: currentProfile.email, new: finalEmail },
           verification_status: { old: currentProfile.verification_status, new: finalStatus },
+          remarks: data.remarks ?? null,
           photo_changed: updatedPhotoPath !== currentProfile.photo_path,
           password_updated: Boolean(data.newPassword),
         },
@@ -1097,8 +1090,8 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
         phone: updatedProfile.phone,
         email: updatedProfile.email,
         verificationStatus: updatedProfile.verification_status,
-        remarks: updatedProfile.remarks,
-        photoPath: updatedProfile.photo_path,
+        remarks: data.remarks ?? null,
+        photoPath: updatedPhotoPath,
         photoUrl,
         password: data.newPassword,
       },

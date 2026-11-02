@@ -558,3 +558,4 @@ export function EditParticipantDialog({
     </Dialog>
   );
 }
+
