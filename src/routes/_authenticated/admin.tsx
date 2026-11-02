@@ -74,6 +74,11 @@ const RegisterParticipantDialog = lazy(() =>
     default: m.RegisterParticipantDialog,
   }))
 );
+const BulkParticipantRegistrationDialog = lazy(() =>
+  import("@/components/admin/BulkParticipantRegistrationDialog").then((m) => ({
+    default: m.BulkParticipantRegistrationDialog,
+  }))
+);
 const AdminQrScannerDialog = lazy(() =>
   import("@/components/admin/AdminQrScannerDialog").then((m) => ({
     default: m.AdminQrScannerDialog,
@@ -194,6 +199,7 @@ function AdminPage() {
   const [digitalIdTarget, setDigitalIdTarget] = useState<ParticipantRow | null>(null);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
   const [downloadingBulkPdf, setDownloadingBulkPdf] = useState(false);
+  const [esdpBulkDialogOpen, setEsdpBulkDialogOpen] = useState(false);
 
   const handleDownloadParticipantPdf = async (p: {
     id: string;
@@ -1404,6 +1410,14 @@ function AdminPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
+                    onClick={() => setEsdpBulkDialogOpen(true)}
+                    className="gap-2 font-bold bg-teal-700 hover:bg-teal-800 text-white shadow-xs"
+                    title="Import participant list from Word (.docx), auto-generate passwords, and bulk register"
+                  >
+                    <Users className="h-4 w-4" /> ESDP Bulk Registration
+                  </Button>
+                  <Button
+                    size="sm"
                     onClick={() => setRegisterDialogOpen(true)}
                     className="gap-2 font-bold shadow-xs"
                   >
@@ -2452,6 +2466,19 @@ function AdminPage() {
               refetch();
             }}
             canApprove={me?.isStaff ?? false}
+          />
+        </Suspense>
+      )}
+
+      {/* ESDP Bulk Participant Registration Dialog */}
+      {esdpBulkDialogOpen && (
+        <Suspense fallback={null}>
+          <BulkParticipantRegistrationDialog
+            open={esdpBulkDialogOpen}
+            onOpenChange={setEsdpBulkDialogOpen}
+            onSuccess={() => {
+              refetch();
+            }}
           />
         </Suspense>
       )}

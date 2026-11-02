@@ -463,6 +463,300 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
     }
   });
 
+export interface BulkParticipantInput {
+  serialNo: number;
+  fullName: string;
+  phone: string;
+  email: string;
+  age?: string;
+  category?: string;
+  password?: string;
+}
+
+export interface BulkRegistrationResultItem {
+  serialNo: number;
+  fullName: string;
+  phone: string;
+  email: string;
+  participantCode: string;
+  status: "created" | "duplicate" | "error";
+  password: string;
+  error?: string;
+}
+
+/** Staff only: Bulk register ESDP participants with auto-generated default passwords and auto-approval */
+export const bulkRegisterParticipantsAdmin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: { participants: BulkParticipantInput[] }) => {
+    if (!Array.isArray(input.participants) || input.participants.length === 0) {
+      throw new Error("No participant records provided for registration.");
+    }
+    if (input.participants.length > 200) {
+      throw new Error("Bulk registration batch size exceeds 200 participants limit.");
+    }
+    return {
+      participants: input.participants.map((p, idx) => ({
+        serialNo: Number(p.serialNo) || idx + 1,
+        fullName: String(p.fullName ?? "").trim(),
+        phone: String(p.phone ?? "").trim(),
+        email: String(p.email ?? "").trim().toLowerCase(),
+        age: p.age ? String(p.age).trim() : undefined,
+        category: p.category ? String(p.category).trim() : undefined,
+        password: p.password ? String(p.password).trim() : undefined,
+      })),
+    };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can bulk register participants.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Fetch existing profiles to detect duplicate phone numbers or email addresses
+    const { data: existingProfiles, error: fetchErr } = await supabaseAdmin
+      .from("profiles")
+      .select("id, phone, email, participant_code");
+
+    if (fetchErr) {
+      throw new Error(`Failed to check existing participants: ${fetchErr.message}`);
+    }
+
+    const existingPhoneMap = new Map<string, { id: string; code: string }>();
+    const existingEmailMap = new Map<string, { id: string; code: string }>();
+
+    for (const p of existingProfiles || []) {
+      if (p.phone) {
+        existingPhoneMap.set(normalizePhone(p.phone), { id: p.id, code: p.participant_code });
+      }
+      if (p.email) {
+        existingEmailMap.set(p.email.toLowerCase(), { id: p.id, code: p.participant_code });
+      }
+    }
+
+    const results: BulkRegistrationResultItem[] = [];
+    let createdCount = 0;
+    let duplicateCount = 0;
+    let failedCount = 0;
+
+    for (const p of data.participants) {
+      const cleanPhone = normalizePhone(p.phone);
+      const cleanName = p.fullName;
+      const cleanEmail = p.email;
+      const computedPassword = p.password || generateDefaultStudentPassword(cleanName, cleanPhone);
+
+      // 1. Validation checks
+      if (!cleanName || cleanName.length < 2) {
+        failedCount++;
+        results.push({
+          serialNo: p.serialNo,
+          fullName: cleanName || "Unknown",
+          phone: p.phone,
+          email: cleanEmail,
+          participantCode: "-",
+          status: "error",
+          password: computedPassword,
+          error: "Full name must be at least 2 characters.",
+        });
+        continue;
+      }
+
+      if (!cleanPhone || !INDIAN_PHONE.test(cleanPhone)) {
+        failedCount++;
+        results.push({
+          serialNo: p.serialNo,
+          fullName: cleanName,
+          phone: p.phone,
+          email: cleanEmail,
+          participantCode: "-",
+          status: "error",
+          password: computedPassword,
+          error: "Invalid 10-digit mobile number.",
+        });
+        continue;
+      }
+
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        failedCount++;
+        results.push({
+          serialNo: p.serialNo,
+          fullName: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail,
+          participantCode: "-",
+          status: "error",
+          password: computedPassword,
+          error: "Invalid email address format.",
+        });
+        continue;
+      }
+
+      // 2. Duplicate detection
+      const existingByPhone = existingPhoneMap.get(cleanPhone);
+      if (existingByPhone) {
+        duplicateCount++;
+        results.push({
+          serialNo: p.serialNo,
+          fullName: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail,
+          participantCode: existingByPhone.code,
+          status: "duplicate",
+          password: computedPassword,
+          error: `Mobile number ${cleanPhone} is already registered (${existingByPhone.code}).`,
+        });
+        continue;
+      }
+
+      const existingByEmail = existingEmailMap.get(cleanEmail);
+      if (existingByEmail) {
+        duplicateCount++;
+        results.push({
+          serialNo: p.serialNo,
+          fullName: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail,
+          participantCode: existingByEmail.code,
+          status: "duplicate",
+          password: computedPassword,
+          error: `Email ${cleanEmail} is already registered (${existingByEmail.code}).`,
+        });
+        continue;
+      }
+
+      // 3. Create user in Supabase Auth
+      try {
+        const authEmail = phoneToAuthEmail(cleanPhone);
+        const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: authEmail,
+          password: normalizeAppPassword(computedPassword),
+          email_confirm: true,
+          user_metadata: {
+            full_name: cleanName,
+            phone: cleanPhone,
+            email: cleanEmail,
+            consent: "true",
+            role: "participant",
+            registered_by_admin: userId,
+            batch: "ESDP",
+            age: p.age ?? null,
+            category: p.category ?? null,
+          },
+        });
+
+        if (authError || !authUser?.user) {
+          const msg = authError?.message || "Failed to create user";
+          if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("already exists")) {
+            duplicateCount++;
+            results.push({
+              serialNo: p.serialNo,
+              fullName: cleanName,
+              phone: cleanPhone,
+              email: cleanEmail,
+              participantCode: "EXISTING",
+              status: "duplicate",
+              password: computedPassword,
+              error: `Account already exists: ${msg}`,
+            });
+          } else {
+            failedCount++;
+            results.push({
+              serialNo: p.serialNo,
+              fullName: cleanName,
+              phone: cleanPhone,
+              email: cleanEmail,
+              participantCode: "-",
+              status: "error",
+              password: computedPassword,
+              error: msg,
+            });
+          }
+          continue;
+        }
+
+        const newUserId = authUser.user.id;
+
+        // 4. Update profile to auto-approved (verified) and add ESDP remarks
+        const remarkParts = ["ESDP Participant"];
+        if (p.age) remarkParts.push(`Age: ${p.age}`);
+        if (p.category) remarkParts.push(`Category: ${p.category}`);
+
+        const { data: updatedProfile } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            verification_status: "verified",
+            remarks: remarkParts.join(" | "),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", newUserId)
+          .select("participant_code")
+          .single();
+
+        const assignedCode = updatedProfile?.participant_code || "SA-2026";
+
+        // 5. Ensure participant role is set
+        await supabaseAdmin
+          .from("user_roles")
+          .upsert({ user_id: newUserId, role: "participant" }, { onConflict: "user_id,role" });
+
+        // Update in-memory map to catch intra-batch duplicate numbers
+        existingPhoneMap.set(cleanPhone, { id: newUserId, code: assignedCode });
+        existingEmailMap.set(cleanEmail, { id: newUserId, code: assignedCode });
+
+        createdCount++;
+        results.push({
+          serialNo: p.serialNo,
+          fullName: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail,
+          participantCode: assignedCode,
+          status: "created",
+          password: computedPassword,
+        });
+      } catch (itemErr: unknown) {
+        failedCount++;
+        results.push({
+          serialNo: p.serialNo,
+          fullName: cleanName,
+          phone: cleanPhone,
+          email: cleanEmail,
+          participantCode: "-",
+          status: "error",
+          password: computedPassword,
+          error: itemErr instanceof Error ? itemErr.message : String(itemErr),
+        });
+      }
+    }
+
+    // 6. Write audit log entry for the bulk import
+    try {
+      await supabaseAdmin.from("audit_logs").insert({
+        actor_id: userId,
+        action: "admin_bulk_register_esdp",
+        details: {
+          total: data.participants.length,
+          created: createdCount,
+          duplicates: duplicateCount,
+          failed: failedCount,
+          timestamp: new Date().toISOString(),
+        } as never,
+      });
+    } catch {
+      // audit log failure should not break response
+    }
+
+    return {
+      ok: true,
+      summary: {
+        total: data.participants.length,
+        created: createdCount,
+        duplicates: duplicateCount,
+        failed: failedCount,
+      },
+      results,
+    };
+  });
+
 /** Staff only: Change a participant's password securely */
 export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
