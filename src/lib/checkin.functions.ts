@@ -24,6 +24,9 @@ export const generateQr = createServerFn({ method: "POST" })
     const { data: settings } = await supabase.from("workshop_settings").select("*").single();
     if (!settings) throw new Error("Workshop settings missing.");
     const today = todayLocal();
+    const { data: dayConfig } = await supabase.from("workshop_days").select("is_active, topic").eq("day_date", today).maybeSingle();
+    if (dayConfig && !dayConfig.is_active)
+      throw new Error(`Today (${today}) is configured as a non-working day or holiday (${dayConfig.topic || "Holiday"}). QR session generation is disabled.`);
     if (!workshopDays(settings).includes(today))
       throw new Error("Today is not a workshop day. Check the workshop dates in Settings.");
     await supabase.from("qr_sessions").update({ revoked: true }).eq("day_date", today).eq("revoked", false);
@@ -72,6 +75,9 @@ export const checkIn = createServerFn({ method: "POST" })
 
     const { data: settings } = await supabaseAdmin.from("workshop_settings").select("*").single();
     const today = todayLocal();
+    const { data: dayConfig } = await supabaseAdmin.from("workshop_days").select("is_active, topic").eq("day_date", today).maybeSingle();
+    if (dayConfig && !dayConfig.is_active)
+      return { ok: false, message: `Attendance is not open today (${today}): it is configured as a non-working day or holiday (${dayConfig.topic || "Holiday"}).` };
     if (!settings || !workshopDays(settings).includes(today))
       return { ok: false, message: "Attendance is not open today — it's not a workshop day." };
 

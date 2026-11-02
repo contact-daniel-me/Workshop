@@ -741,7 +741,12 @@ function AdminPage() {
             settings={settings}
             participantRows={adminData?.participantRows}
             photoUrls={photoUrls}
+            configuredDays={adminData?.configuredWorkshopDays}
             onAttendanceUpdated={() => void refetch()}
+            onSettingsUpdated={() => {
+              void qc.invalidateQueries({ queryKey: ["settings"] });
+              void refetch();
+            }}
             initialDate={dailyDate}
           />
         </TabsContent>

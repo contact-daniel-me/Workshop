@@ -87,6 +87,22 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
       .select("*")
       .maybeSingle();
 
+    // Check if today is configured as a holiday / non-working day
+    const { data: todayDayConfig } = await supabaseAdmin
+      .from("workshop_days")
+      .select("is_active, topic")
+      .eq("day_date", today)
+      .maybeSingle();
+
+    if (todayDayConfig && !todayDayConfig.is_active) {
+      return {
+        ok: false,
+        code: "HOLIDAY_NON_WORKING_DAY",
+        dayDate: today,
+        message: `Today (${today}) is declared a non-working day or holiday (${todayDayConfig.topic || "Holiday"}). Attendance is not applicable.`,
+      };
+    }
+
     if (!settings || !workshopDays(settings).includes(today)) {
       return {
         ok: false,
@@ -794,6 +810,22 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
       .from("workshop_settings")
       .select("*")
       .maybeSingle();
+
+    // Check if today is configured as a holiday / non-working day
+    const { data: todayDayConfig } = await supabaseAdmin
+      .from("workshop_days")
+      .select("is_active, topic")
+      .eq("day_date", today)
+      .maybeSingle();
+
+    if (todayDayConfig && !todayDayConfig.is_active) {
+      return {
+        ok: false,
+        code: "HOLIDAY_NON_WORKING_DAY",
+        dayDate: today,
+        message: `Today (${today}) is declared a non-working day or holiday (${todayDayConfig.topic || "Holiday"}). Attendance is not applicable.`,
+      };
+    }
 
     if (!settings || !workshopDays(settings).includes(today)) {
       return {

@@ -64,19 +64,24 @@ export function useMyAttendance() {
     gcTime: 5 * 60_000,
     queryFn: async () => {
       if (!me?.user?.id || !settings) return null;
-      const { data, error } = await supabase
-        .from("attendance")
-        .select("id, user_id, day_date, status, method, checked_in_at, remarks, morning_status, afternoon_status")
-        .eq("user_id", me.user.id)
-        .order("day_date", { ascending: false });
+      const [{ data, error }, { data: daysData }] = await Promise.all([
+        supabase
+          .from("attendance")
+          .select("id, user_id, day_date, status, method, checked_in_at, remarks, morning_status, afternoon_status")
+          .eq("user_id", me.user.id)
+          .order("day_date", { ascending: false }),
+        supabase
+          .from("workshop_days")
+          .select("id, day_date, is_active, topic, day_number"),
+      ]);
 
       if (error) throw error;
       const records = (data ?? []).map((r) => ({
         ...r,
         status: r.status as AttStatus,
       }));
-      const summary = summarize(settings, records, todayLocal());
-      return { records, summary };
+      const summary = summarize(settings, records, todayLocal(), daysData ?? []);
+      return { records, summary, configuredDays: daysData ?? [] };
     },
   });
 }
@@ -95,7 +100,7 @@ export function useAdminData() {
       if (!settings) return null;
       const today = todayLocal();
 
-      const [profilesRes, attendanceRes, qrRes, rolesRes, auditRes] = await Promise.all([
+      const [profilesRes, attendanceRes, qrRes, rolesRes, auditRes, daysRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("id, participant_code, full_name, phone, email, photo_path, verification_status, created_at")
@@ -116,10 +121,15 @@ export function useAdminData() {
           .select("id, actor_id, action, target_user, details, created_at")
           .order("created_at", { ascending: false })
           .limit(30),
+        supabase
+          .from("workshop_days")
+          .select("id, day_date, is_active, topic, day_number")
+          .order("day_date", { ascending: true }),
       ]);
 
       if (profilesRes.error) throw profilesRes.error;
       const profiles = profilesRes.data ?? [];
+      const configuredWorkshopDays = daysRes?.data ?? [];
       const attendance = (attendanceRes.data ?? []).map((a) => ({
         ...a,
         status: a.status as AttStatus,
@@ -147,7 +157,7 @@ export function useAdminData() {
       // Assemble ParticipantRow with precomputed summaries
       const participantRows: ParticipantRow[] = profiles.map((p) => {
         const userAtt = attByUser.get(p.id) || [];
-        const summary = summarize(settings, userAtt, today);
+        const summary = summarize(settings, userAtt, today, configuredWorkshopDays);
         const rawAttendance: ParticipantRow["rawAttendance"] = {};
         userAtt.forEach((a) => {
           rawAttendance[a.day_date] = {
@@ -183,6 +193,7 @@ export function useAdminData() {
         activeQr,
         rolesByUser,
         auditLogs,
+        configuredWorkshopDays,
       };
     },
   });

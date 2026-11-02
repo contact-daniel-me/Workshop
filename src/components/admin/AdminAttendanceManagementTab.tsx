@@ -17,6 +17,7 @@ import {
   X,
   AlertTriangle,
   ArrowUpDown,
+  CalendarDays,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
 import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import { toast } from "sonner";
 import {
@@ -59,15 +66,22 @@ import {
   resolveSessionAttendance,
   todayLocal,
   workshopDays,
+  computeWorkshopSchedule,
+  type WorkshopCalendarDay,
+  type WorkshopDayRecord,
   type Settings,
 } from "@/lib/attendance";
 import type { ParticipantRow } from "@/lib/excel";
+import { ManageWorkshopHolidaysDialog } from "./ManageWorkshopHolidaysDialog";
+import { ResetWorkshopTimelineDialog } from "./ResetWorkshopTimelineDialog";
 
 interface AdminAttendanceManagementTabProps {
   settings: Settings | null | undefined;
   participantRows: ParticipantRow[] | undefined;
   photoUrls: Record<string, string>;
   onAttendanceUpdated: () => Promise<void> | void;
+  configuredDays?: WorkshopDayRecord[];
+  onSettingsUpdated?: () => Promise<void> | void;
   initialDate?: string;
 }
 
@@ -76,13 +90,60 @@ export function AdminAttendanceManagementTab({
   participantRows = [],
   photoUrls,
   onAttendanceUpdated,
+  configuredDays = [],
+  onSettingsUpdated,
   initialDate,
 }: AdminAttendanceManagementTabProps) {
   const today = todayLocal();
-  const allDays = useMemo(() => (settings ? workshopDays(settings) : [today]), [settings, today]);
+
+  // Full dynamic schedule accounting for configured holidays
+  const schedule = useMemo(() => {
+    if (!settings) return [];
+    return computeWorkshopSchedule(settings, configuredDays, today);
+  }, [settings, configuredDays, today]);
+
+  const allDays = useMemo(() => {
+    if (schedule.length > 0) return schedule.map((d) => d.date);
+    return settings ? workshopDays(settings) : [today];
+  }, [schedule, settings, today]);
 
   // Selected Date State
   const [selectedDate, setSelectedDate] = useState<string>(initialDate || today);
+
+  // Active schedule day and holiday flag for the selected date
+  const selectedScheduleDay = useMemo(() => {
+    return schedule.find((d) => d.date === selectedDate);
+  }, [schedule, selectedDate]);
+
+  const isSelectedDateHoliday = selectedScheduleDay ? !selectedScheduleDay.isActive : false;
+
+  // Dialog & Popover States
+  const [calendarPopoverOpen, setCalendarPopoverOpen] = useState(false);
+  const [holidaysDialogOpen, setHolidaysDialogOpen] = useState(false);
+  const [resetTimelineDialogOpen, setResetTimelineDialogOpen] = useState(false);
+
+  // Total Attendance Counts and Records for Pre-flight Conflict Checks
+  const totalAttendanceRecordsCount = useMemo(() => {
+    let count = 0;
+    participantRows.forEach((p) => {
+      if (p.rawAttendance) {
+        count += Object.keys(p.rawAttendance).length;
+      }
+    });
+    return count;
+  }, [participantRows]);
+
+  const allRecordedAttendanceDates = useMemo(() => {
+    const list: { day_date: string }[] = [];
+    participantRows.forEach((p) => {
+      if (p.rawAttendance) {
+        Object.keys(p.rawAttendance).forEach((d) => {
+          list.push({ day_date: d });
+        });
+      }
+    });
+    return list;
+  }, [participantRows]);
 
   // Search & Session Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -352,7 +413,7 @@ export function AdminAttendanceManagementTab({
       {/* 1. TOP HEADER & INTERACTIVE CALENDAR SELECTOR */}
       <Card className="shadow-sm border">
         <CardHeader className="pb-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
                 <CardTitle className="font-display text-xl sm:text-2xl flex items-center gap-2.5">
@@ -363,27 +424,128 @@ export function AdminAttendanceManagementTab({
                 </Badge>
               </div>
               <CardDescription className="mt-1">
-                Manual session-wise attendance controls (Morning, Afternoon & Both) and audit-logged reset overrides.
+                Manual session-wise attendance controls (Morning, Afternoon & Both), calendar scheduling, and audit-logged overrides.
               </CardDescription>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Quick Jump Date Selector */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-muted-foreground whitespace-nowrap">Managing Date:</span>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Standard Monthly Calendar Popover */}
+              <Popover open={calendarPopoverOpen} onOpenChange={setCalendarPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs font-semibold cursor-pointer">
+                    <CalendarDays className="h-3.5 w-3.5 text-primary" />
+                    <span className="font-mono">{selectedDate}</span>
+                    <Badge variant="secondary" className="font-mono text-[10px] px-1 py-0">
+                      {selectedScheduleDay ? (selectedScheduleDay.isActive ? `Day ${selectedScheduleDay.dayNumber}` : "Holiday") : ""}
+                    </Badge>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-3" align="end">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b">
+                      <div className="text-xs font-bold flex items-center gap-1.5">
+                        <CalendarDays className="h-3.5 w-3.5 text-primary" /> Monthly Calendar
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[11px] px-2 text-primary font-semibold cursor-pointer"
+                        onClick={() => {
+                          setSelectedDate(today);
+                          setCalendarPopoverOpen(false);
+                        }}
+                      >
+                        Jump to Today
+                      </Button>
+                    </div>
+
+                    <DayPickerCalendar
+                      mode="single"
+                      selected={new Date(selectedDate + "T00:00:00")}
+                      onSelect={(d) => {
+                        if (d) {
+                          const year = d.getFullYear();
+                          const month = String(d.getMonth() + 1).padStart(2, "0");
+                          const day = String(d.getDate()).padStart(2, "0");
+                          setSelectedDate(`${year}-${month}-${day}`);
+                          setCalendarPopoverOpen(false);
+                        }
+                      }}
+                      modifiers={{
+                        workshopActive: (d) => {
+                          const str = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                          const item = schedule.find((s) => s.date === str);
+                          return !!(item && item.isActive);
+                        },
+                        workshopHoliday: (d) => {
+                          const str = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                          const item = schedule.find((s) => s.date === str);
+                          return !!(item && !item.isActive);
+                        },
+                        isCurrentToday: (d) => {
+                          const str = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                          return str === today;
+                        },
+                      }}
+                      modifiersClassNames={{
+                        workshopActive: "font-bold text-emerald-700 dark:text-emerald-400",
+                        workshopHoliday: "bg-amber-100 text-amber-900 font-bold dark:bg-amber-950/70 dark:text-amber-300",
+                        isCurrentToday: "ring-2 ring-primary ring-offset-1 font-bold",
+                      }}
+                    />
+
+                    <div className="pt-2 border-t flex items-center justify-between text-[11px] text-muted-foreground gap-2">
+                      <span className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" /> Active Session
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-amber-500" /> Holiday / Off
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full border border-primary" /> Today
+                      </span>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Quick Jump Date Select */}
+              <div className="flex items-center gap-1.5">
                 <Select value={selectedDate} onValueChange={setSelectedDate}>
-                  <SelectTrigger className="w-[190px] font-mono text-xs h-9 bg-card">
+                  <SelectTrigger className="w-[195px] font-mono text-xs h-9 bg-card">
                     <SelectValue placeholder="Select Workshop Date" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {allDays.map((d, idx) => (
-                      <SelectItem key={d} value={d} className="font-mono text-xs">
-                        Day {idx + 1} ({d}) {d === today ? "— Today" : ""}
+                  <SelectContent className="max-h-72">
+                    {schedule.map((item) => (
+                      <SelectItem key={item.date} value={item.date} className="font-mono text-xs">
+                        {item.isActive ? `Day ${item.dayNumber}` : `Holiday`} ({item.date}) {item.isToday ? "— Today" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Manage Workshop Days & Holidays Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setHolidaysDialogOpen(true)}
+                className="h-9 gap-1.5 text-xs font-semibold cursor-pointer border-amber-300/80 hover:bg-amber-50 dark:border-amber-700 dark:hover:bg-amber-950/40 text-amber-900 dark:text-amber-200"
+              >
+                <CalendarDays className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Manage Days & Holidays</span>
+              </Button>
+
+              {/* Reset Workshop Timeline Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setResetTimelineDialogOpen(true)}
+                className="h-9 gap-1.5 text-xs font-semibold cursor-pointer border-rose-300/80 hover:bg-rose-50 dark:border-rose-700 dark:hover:bg-rose-950/40 text-rose-900 dark:text-rose-200"
+              >
+                <RotateCcw className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                <span>Reset Timeline</span>
+              </Button>
 
               {/* View Audit Trail Button */}
               <Button
@@ -404,32 +566,53 @@ export function AdminAttendanceManagementTab({
                 <Calendar className="h-3.5 w-3.5 text-primary" /> Workshop Timeline (Click to Select Date)
               </p>
               <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Active Session</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-primary" /> Today</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Active Past/Today</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground/30" /> Upcoming Active</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> Holiday / Off</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full ring-2 ring-primary" /> Today</span>
               </div>
             </div>
 
-            {/* 30-Day Grid */}
+            {/* Dynamic Grid */}
             <div className="grid grid-cols-6 sm:grid-cols-10 lg:grid-cols-15 gap-1.5 pt-1">
-              {allDays.map((d, idx) => {
-                const isSelected = d === selectedDate;
-                const isToday = d === today;
+              {schedule.map((item) => {
+                const isSelected = item.date === selectedDate;
+                const isPastOrTodayActive = item.isActive && item.date <= today;
+                const isHoliday = !item.isActive;
+
+                let btnClass = "bg-card text-muted-foreground hover:bg-muted/40 border-border";
+                if (isSelected) {
+                  btnClass = isHoliday
+                    ? "bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-400/50 font-bold"
+                    : "bg-primary text-primary-foreground border-primary shadow-xs ring-2 ring-primary/40 font-bold";
+                } else if (item.isToday) {
+                  btnClass = isHoliday
+                    ? "bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500 font-bold ring-2 ring-amber-500/40"
+                    : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500 font-bold ring-2 ring-emerald-500/40";
+                } else if (isHoliday) {
+                  btnClass = "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20";
+                } else if (isPastOrTodayActive) {
+                  btnClass = "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40 hover:bg-emerald-100/60";
+                }
+
                 return (
                   <button
-                    key={d}
+                    key={item.date}
                     type="button"
-                    onClick={() => setSelectedDate(d)}
-                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg border text-center transition-all cursor-pointer ${
-                      isSelected
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs ring-2 ring-primary/30"
-                        : isToday
-                        ? "bg-primary/10 text-primary border-primary/40 font-semibold"
-                        : "bg-card text-foreground hover:bg-muted/40 border-border"
-                    }`}
-                    title={`Day ${idx + 1}: ${d}${isToday ? " (Today)" : ""}`}
+                    onClick={() => setSelectedDate(item.date)}
+                    className={`flex flex-col items-center justify-center p-1.5 rounded-lg border text-center transition-all cursor-pointer ${btnClass}`}
+                    title={
+                      isHoliday
+                        ? `Holiday: ${item.holidayReason || "Non-Working Day"} (${item.date})${item.isToday ? " (Today)" : ""}`
+                        : `Day ${item.dayNumber}: ${item.date}${item.isToday ? " (Today)" : ""}`
+                    }
                   >
-                    <span className="text-[10px] font-bold font-mono">D{idx + 1}</span>
-                    <span className="text-[9px] opacity-80 truncate max-w-full font-mono">{d.slice(5)}</span>
+                    <span className="text-[10px] font-bold font-mono">
+                      {isHoliday ? "OFF" : `D${item.dayNumber}`}
+                    </span>
+                    <span className="text-[9px] opacity-80 truncate max-w-full font-mono">
+                      {item.date.slice(5)}
+                    </span>
                   </button>
                 );
               })}
@@ -437,6 +620,39 @@ export function AdminAttendanceManagementTab({
           </div>
         </CardHeader>
       </Card>
+
+      {/* NON-WORKING DAY / HOLIDAY ALERT BANNER */}
+      {isSelectedDateHoliday && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-2 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="font-semibold text-sm flex items-center gap-2">
+                <span>Non-Working Day / Holiday</span>
+                <Badge variant="outline" className="border-amber-500/40 bg-amber-500/20 text-amber-800 dark:text-amber-300 text-xs font-mono font-bold">
+                  OFF
+                </Badge>
+                <span className="text-xs font-mono text-muted-foreground">({selectedDate})</span>
+              </div>
+              <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                {selectedScheduleDay?.holidayReason || "This date is marked as a holiday. Attendance marking is disabled."}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setHolidaysDialogOpen(true)}
+              className="border-amber-500/40 hover:bg-amber-500/20 text-xs font-semibold cursor-pointer"
+            >
+              Manage / Restore Date
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* 2. ATTENDANCE OVERVIEW KPI METRICS */}
       <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-6">
@@ -550,8 +766,10 @@ export function AdminAttendanceManagementTab({
             <Button
               size="sm"
               variant="outline"
+              disabled={isSelectedDateHoliday}
+              title={isSelectedDateHoliday ? "Attendance cannot be marked on non-working days" : undefined}
               onClick={() => handleTriggerBulkAction("mark_all_morning")}
-              className="h-8 text-xs font-semibold gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50 cursor-pointer"
+              className="h-8 text-xs font-semibold gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50 cursor-pointer disabled:opacity-40"
             >
               <Sun className="h-3.5 w-3.5 text-amber-600" /> Morning Present
             </Button>
@@ -559,16 +777,20 @@ export function AdminAttendanceManagementTab({
             <Button
               size="sm"
               variant="outline"
+              disabled={isSelectedDateHoliday}
+              title={isSelectedDateHoliday ? "Attendance cannot be marked on non-working days" : undefined}
               onClick={() => handleTriggerBulkAction("mark_all_afternoon")}
-              className="h-8 text-xs font-semibold gap-1.5 border-orange-300 text-orange-800 hover:bg-orange-50 cursor-pointer"
+              className="h-8 text-xs font-semibold gap-1.5 border-orange-300 text-orange-800 hover:bg-orange-50 cursor-pointer disabled:opacity-40"
             >
               <Sunset className="h-3.5 w-3.5 text-orange-600" /> Afternoon Present
             </Button>
 
             <Button
               size="sm"
+              disabled={isSelectedDateHoliday}
+              title={isSelectedDateHoliday ? "Attendance cannot be marked on non-working days" : undefined}
               onClick={() => handleTriggerBulkAction("mark_all_both")}
-              className="h-8 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 shadow-xs cursor-pointer"
+              className="h-8 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 shadow-xs cursor-pointer disabled:opacity-40"
             >
               <CheckCheck className="h-3.5 w-3.5" /> Both Sessions Present
             </Button>
@@ -779,53 +1001,62 @@ export function AdminAttendanceManagementTab({
                                 Attendance Override
                               </DropdownMenuLabel>
 
-                              {/* Mark Morning Present */}
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setSingleActionTarget({
-                                    participant: p,
-                                    action: "mark_morning",
-                                    title: "Mark Morning Present",
-                                    isDestructive: false,
-                                  })
-                                }
-                                className="cursor-pointer gap-2 text-xs"
-                              >
-                                <Sun className="h-3.5 w-3.5 text-amber-600" />
-                                <span>Mark Morning Present</span>
-                              </DropdownMenuItem>
+                              {isSelectedDateHoliday ? (
+                                <DropdownMenuItem disabled className="cursor-not-allowed gap-2 text-xs text-amber-700 dark:text-amber-400">
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                  <span>Non-Working Day (Disabled)</span>
+                                </DropdownMenuItem>
+                              ) : (
+                                <>
+                                  {/* Mark Morning Present */}
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setSingleActionTarget({
+                                        participant: p,
+                                        action: "mark_morning",
+                                        title: "Mark Morning Present",
+                                        isDestructive: false,
+                                      })
+                                    }
+                                    className="cursor-pointer gap-2 text-xs"
+                                  >
+                                    <Sun className="h-3.5 w-3.5 text-amber-600" />
+                                    <span>Mark Morning Present</span>
+                                  </DropdownMenuItem>
 
-                              {/* Mark Afternoon Present */}
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setSingleActionTarget({
-                                    participant: p,
-                                    action: "mark_afternoon",
-                                    title: "Mark Afternoon Present",
-                                    isDestructive: false,
-                                  })
-                                }
-                                className="cursor-pointer gap-2 text-xs"
-                              >
-                                <Sunset className="h-3.5 w-3.5 text-orange-600" />
-                                <span>Mark Afternoon Present</span>
-                              </DropdownMenuItem>
+                                  {/* Mark Afternoon Present */}
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setSingleActionTarget({
+                                        participant: p,
+                                        action: "mark_afternoon",
+                                        title: "Mark Afternoon Present",
+                                        isDestructive: false,
+                                      })
+                                    }
+                                    className="cursor-pointer gap-2 text-xs"
+                                  >
+                                    <Sunset className="h-3.5 w-3.5 text-orange-600" />
+                                    <span>Mark Afternoon Present</span>
+                                  </DropdownMenuItem>
 
-                              {/* Mark Both Sessions Present */}
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setSingleActionTarget({
-                                    participant: p,
-                                    action: "mark_both",
-                                    title: "Mark Both Sessions Present",
-                                    isDestructive: false,
-                                  })
-                                }
-                                className="cursor-pointer gap-2 text-xs font-semibold text-emerald-700"
-                              >
-                                <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
-                                <span>Mark Both Sessions Present</span>
-                              </DropdownMenuItem>
+                                  {/* Mark Both Sessions Present */}
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setSingleActionTarget({
+                                        participant: p,
+                                        action: "mark_both",
+                                        title: "Mark Both Sessions Present",
+                                        isDestructive: false,
+                                      })
+                                    }
+                                    className="cursor-pointer gap-2 text-xs font-semibold text-emerald-700"
+                                  >
+                                    <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                    <span>Mark Both Sessions Present</span>
+                                  </DropdownMenuItem>
+                                </>
+                              )}
 
                               <DropdownMenuSeparator />
 
@@ -1073,6 +1304,37 @@ export function AdminAttendanceManagementTab({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* 6. MANAGE WORKSHOP DAYS & HOLIDAYS DIALOG */}
+      {settings && (
+        <ManageWorkshopHolidaysDialog
+          open={holidaysDialogOpen}
+          onOpenChange={setHolidaysDialogOpen}
+          selectedDate={selectedDate}
+          schedule={schedule}
+          configuredDays={configuredDays || []}
+          settings={settings}
+          attendanceRecords={allRecordedAttendanceDates}
+          onConfigUpdated={async () => {
+            await onSettingsUpdated?.();
+            await onAttendanceUpdated();
+          }}
+        />
+      )}
+
+      {/* 7. RESET WORKSHOP TIMELINE DIALOG */}
+      {settings && (
+        <ResetWorkshopTimelineDialog
+          open={resetTimelineDialogOpen}
+          onOpenChange={setResetTimelineDialogOpen}
+          settings={settings}
+          totalAttendanceRecordsCount={totalAttendanceRecordsCount}
+          onTimelineReset={async () => {
+            await onSettingsUpdated?.();
+            await onAttendanceUpdated();
+          }}
+        />
       )}
     </div>
   );

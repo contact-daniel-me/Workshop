@@ -689,6 +689,19 @@ export const adminManualAttendanceAction = createServerFn({ method: "POST" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    // Enforce holiday restriction: cannot mark attendance on non-working days
+    const { data: dayConfig } = await supabaseAdmin
+      .from("workshop_days")
+      .select("is_active, topic")
+      .eq("day_date", data.dayDate)
+      .maybeSingle();
+
+    if (dayConfig && !dayConfig.is_active && data.action.startsWith("mark_")) {
+      throw new Error(
+        `Cannot mark attendance: ${data.dayDate} is configured as a holiday or non-working day (${dayConfig.topic || "Holiday"}).`
+      );
+    }
+
     // Fetch existing attendance record
     const { data: existing } = await supabaseAdmin
       .from("attendance")
@@ -821,6 +834,19 @@ export const adminBulkAttendanceAction = createServerFn({ method: "POST" })
     if (!staff) throw new Error("Unauthorized: Only administrators can execute bulk attendance changes.");
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Enforce holiday restriction: cannot mark bulk attendance on non-working days
+    const { data: dayConfig } = await supabaseAdmin
+      .from("workshop_days")
+      .select("is_active, topic")
+      .eq("day_date", data.dayDate)
+      .maybeSingle();
+
+    if (dayConfig && !dayConfig.is_active && data.action.startsWith("mark_")) {
+      throw new Error(
+        `Cannot mark bulk attendance: ${data.dayDate} is configured as a holiday or non-working day (${dayConfig.topic || "Holiday"}).`
+      );
+    }
 
     // Fetch target profiles (verified participants)
     let query = supabaseAdmin
@@ -976,6 +1002,11 @@ export const getAttendanceAuditHistory = createServerFn({ method: "GET" })
         "attendance_manual_marked",
         "attendance_confirmed_qr_scan",
         "attendance_confirmed_face_verification",
+        "workshop_day_configured",
+        "workshop_bulk_holidays_applied",
+        "workshop_day_restored",
+        "workshop_timeline_reset_only",
+        "workshop_timeline_and_attendance_reset",
       ])
       .order("created_at", { ascending: false })
       .limit(data.limit);
@@ -984,6 +1015,345 @@ export const getAttendanceAuditHistory = createServerFn({ method: "GET" })
 
     return {
       logs: logs ?? [],
+    };
+  });
+
+/** Staff only: Retrieve workshop calendar configuration and overrides */
+export const getWorkshopCalendarConfig = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can view workshop calendar config.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const [{ data: settings, error: sErr }, { data: days, error: dErr }] = await Promise.all([
+      supabaseAdmin.from("workshop_settings").select("*").maybeSingle(),
+      supabaseAdmin
+        .from("workshop_days")
+        .select("id, day_date, is_active, topic, day_number, created_at")
+        .order("day_date", { ascending: true }),
+    ]);
+
+    if (sErr) throw new Error(sErr.message);
+    if (dErr) throw new Error(dErr.message);
+
+    return {
+      settings,
+      configuredDays: (days ?? []).map((d) => ({
+        day_date: d.day_date,
+        is_active: d.is_active,
+        topic: d.topic,
+        day_number: d.day_number,
+      })),
+    };
+  });
+
+/** Staff only: Configure a specific date as an active workshop day or holiday */
+export const setWorkshopDayStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (input: {
+      dayDate: string;
+      isActive: boolean;
+      reason?: string;
+      forceIfAttendanceExists?: boolean;
+    }) => ({
+      dayDate: String(input.dayDate).trim(),
+      isActive: Boolean(input.isActive),
+      reason: input.reason ? String(input.reason).trim() : undefined,
+      forceIfAttendanceExists: Boolean(input.forceIfAttendanceExists),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can configure workshop days.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // If changing to holiday, check if attendance records already exist on this date
+    if (!data.isActive) {
+      const { count, error: countErr } = await supabaseAdmin
+        .from("attendance")
+        .select("id", { count: "exact", head: true })
+        .eq("day_date", data.dayDate);
+
+      if (countErr) throw new Error(countErr.message);
+
+      if ((count ?? 0) > 0 && !data.forceIfAttendanceExists) {
+        return {
+          ok: false,
+          hasExistingAttendance: true,
+          attendanceCount: count ?? 0,
+          message: `Warning: ${count} attendance record(s) exist on ${data.dayDate}. Converting this day to a holiday requires confirmation.`,
+        };
+      }
+    }
+
+    // Upsert into workshop_days
+    const { error: upsertErr } = await supabaseAdmin.from("workshop_days").upsert(
+      {
+        day_date: data.dayDate,
+        is_active: data.isActive,
+        topic: data.isActive ? null : (data.reason || "Holiday / Non-Working Day"),
+        day_number: 1, // Satisfies table check constraint (1-120)
+      },
+      { onConflict: "day_date" },
+    );
+
+    if (upsertErr) throw new Error(upsertErr.message);
+
+    // Audit log
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "workshop_day_configured",
+      details: {
+        dayDate: data.dayDate,
+        isActive: data.isActive,
+        reason: data.reason ?? null,
+        forced: data.forceIfAttendanceExists ?? false,
+        timestamp: new Date().toISOString(),
+      } as never,
+    });
+
+    return {
+      ok: true,
+      hasExistingAttendance: false,
+      message: data.isActive
+        ? `Restored ${data.dayDate} as an Active Workshop Day.`
+        : `Marked ${data.dayDate} as a Holiday (${data.reason || "Non-Working Day"}).`,
+    };
+  });
+
+/** Staff only: Configure weekend recurring holiday rules in bulk */
+export const applyBulkWeekendHolidays = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (input: {
+      weekendRule: "saturday" | "sunday" | "both";
+      applyScope: "remaining" | "full" | "date_range";
+      startDate?: string;
+      endDate?: string;
+      reason?: string;
+      forceIfAttendanceExists?: boolean;
+    }) => ({
+      weekendRule: input.weekendRule,
+      applyScope: input.applyScope,
+      startDate: input.startDate ? String(input.startDate).trim() : undefined,
+      endDate: input.endDate ? String(input.endDate).trim() : undefined,
+      reason: input.reason ? String(input.reason).trim() : undefined,
+      forceIfAttendanceExists: Boolean(input.forceIfAttendanceExists),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can configure weekend holidays.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { todayLocal, addDays } = await import("./attendance");
+    const today = todayLocal();
+
+    const { data: settings } = await supabaseAdmin.from("workshop_settings").select("*").maybeSingle();
+    if (!settings) throw new Error("Workshop settings not found.");
+
+    let start = settings.start_date;
+    if (data.applyScope === "remaining") {
+      start = today;
+    } else if (data.applyScope === "date_range" && data.startDate) {
+      start = data.startDate;
+    }
+
+    const end = data.endDate || addDays(settings.start_date, settings.duration_days * 2);
+
+    const affectedDates: string[] = [];
+    let cur = start;
+    let limit = 0;
+    while (cur <= end && limit < 365) {
+      limit++;
+      const dt = new Date(cur + "T00:00:00Z");
+      const dayOfWeek = dt.getUTCDay(); // 0 = Sun, 6 = Sat
+      const isSat = dayOfWeek === 6;
+      const isSun = dayOfWeek === 0;
+
+      if (
+        (data.weekendRule === "saturday" && isSat) ||
+        (data.weekendRule === "sunday" && isSun) ||
+        (data.weekendRule === "both" && (isSat || isSun))
+      ) {
+        affectedDates.push(cur);
+      }
+      cur = addDays(cur, 1);
+    }
+
+    if (affectedDates.length === 0) {
+      return { ok: true, count: 0, message: "No matching weekend dates found in the selected range." };
+    }
+
+    // Check existing attendance on affected dates
+    if (!data.forceIfAttendanceExists) {
+      const { data: attWithDates } = await supabaseAdmin
+        .from("attendance")
+        .select("day_date")
+        .in("day_date", affectedDates);
+
+      const datesWithAttendance = Array.from(new Set((attWithDates ?? []).map((a) => a.day_date)));
+      if (datesWithAttendance.length > 0) {
+        return {
+          ok: false,
+          hasExistingAttendance: true,
+          datesWithAttendance,
+          affectedDates,
+          message: `Warning: ${datesWithAttendance.length} weekend date(s) already have recorded attendance: ${datesWithAttendance.join(", ")}. Please confirm to proceed.`,
+        };
+      }
+    }
+
+    const defaultReason =
+      data.reason ||
+      (data.weekendRule === "both"
+        ? "Weekend Holiday (Sat/Sun)"
+        : `${data.weekendRule === "saturday" ? "Saturday" : "Sunday"} Holiday`);
+
+    const rows = affectedDates.map((d) => ({
+      day_date: d,
+      is_active: false,
+      topic: defaultReason,
+      day_number: 1,
+    }));
+
+    const { error: upsertErr } = await supabaseAdmin.from("workshop_days").upsert(rows, { onConflict: "day_date" });
+
+    if (upsertErr) throw new Error(upsertErr.message);
+
+    // Audit log
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "workshop_bulk_holidays_applied",
+      details: {
+        weekendRule: data.weekendRule,
+        applyScope: data.applyScope,
+        affectedCount: affectedDates.length,
+        affectedDates,
+        reason: defaultReason,
+        timestamp: new Date().toISOString(),
+      } as never,
+    });
+
+    return {
+      ok: true,
+      count: affectedDates.length,
+      affectedDates,
+      message: `Successfully marked ${affectedDates.length} weekend dates as holidays.`,
+    };
+  });
+
+/** Staff only: Restore a holiday date back to an active workshop day */
+export const restoreWorkshopDayActive = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: { dayDate: string }) => ({
+    dayDate: String(input.dayDate).trim(),
+  }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can restore workshop days.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { error } = await supabaseAdmin
+      .from("workshop_days")
+      .update({ is_active: true, topic: null })
+      .eq("day_date", data.dayDate);
+
+    if (error) throw new Error(error.message);
+
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "workshop_day_restored",
+      details: { dayDate: data.dayDate, timestamp: new Date().toISOString() } as never,
+    });
+
+    return { ok: true, message: `Restored ${data.dayDate} as an Active Workshop Day.` };
+  });
+
+/** Staff only: Reset the workshop timeline starting from Day 1 */
+export const resetWorkshopTimeline = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    (input: {
+      newStartDate: string;
+      clearAttendance: boolean;
+      preserveHolidays?: boolean;
+      reason?: string;
+    }) => ({
+      newStartDate: String(input.newStartDate).trim(),
+      clearAttendance: Boolean(input.clearAttendance),
+      preserveHolidays: input.preserveHolidays !== false,
+      reason: input.reason ? String(input.reason).trim() : undefined,
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can reset the workshop timeline.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1. Update workshop_settings start_date
+    const { error: setErr } = await supabaseAdmin
+      .from("workshop_settings")
+      .update({
+        start_date: data.newStartDate,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", 1);
+
+    if (setErr) throw new Error(`Failed to update start date: ${setErr.message}`);
+
+    // 2. If clearAttendance is true, clear attendance records
+    let clearedCount = 0;
+    if (data.clearAttendance) {
+      const { count } = await supabaseAdmin.from("attendance").select("id", { count: "exact", head: true });
+      clearedCount = count ?? 0;
+      const { error: delAttErr } = await supabaseAdmin
+        .from("attendance")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+      if (delAttErr) throw new Error(`Failed to clear attendance: ${delAttErr.message}`);
+    }
+
+    // 3. If !preserveHolidays, clear workshop_days overrides
+    if (!data.preserveHolidays) {
+      await supabaseAdmin.from("workshop_days").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    }
+
+    // 4. Audit Log
+    const action = data.clearAttendance
+      ? "workshop_timeline_and_attendance_reset"
+      : "workshop_timeline_reset_only";
+
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action,
+      details: {
+        newStartDate: data.newStartDate,
+        clearAttendance: data.clearAttendance,
+        clearedAttendanceRecords: clearedCount,
+        preserveHolidays: data.preserveHolidays,
+        reason: data.reason || null,
+        timestamp: new Date().toISOString(),
+      } as never,
+    });
+
+    return {
+      ok: true,
+      clearedAttendance: data.clearAttendance,
+      message: data.clearAttendance
+        ? `Workshop timeline restarted at Day 1 (${data.newStartDate}) and ${clearedCount} attendance records cleared.`
+        : `Workshop timeline restarted at Day 1 (${data.newStartDate}). All existing attendance records and holiday rules were preserved.`,
     };
   });
 

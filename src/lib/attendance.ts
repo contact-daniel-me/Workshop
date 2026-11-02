@@ -1,6 +1,23 @@
 // Pure attendance rules — shared by dashboards and Excel exports.
 export type AttStatus = "present" | "pending" | "excused" | "absent" | "rejected";
-export type DayState = "Present" | "Absent" | "Pending" | "Excused" | "Open" | "Not Held";
+export type DayState = "Present" | "Absent" | "Pending" | "Excused" | "Open" | "Not Held" | "Holiday";
+
+export interface WorkshopCalendarDay {
+  date: string; // YYYY-MM-DD
+  dayNumber: number | null; // e.g. 1, 2, 3... or null for holidays
+  isActive: boolean; // true = Active workshop day, false = Holiday / Non-working
+  holidayReason?: string | null;
+  isToday: boolean;
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  dayName: string; // "Sun", "Mon", etc.
+}
+
+export interface WorkshopDayRecord {
+  day_date: string;
+  is_active: boolean;
+  topic?: string | null;
+  day_number?: number | null;
+}
 
 export interface Settings {
   name: string;
@@ -72,11 +89,111 @@ export function addDays(date: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function workshopDays(s: Pick<Settings, "start_date" | "duration_days">): string[] {
-  return Array.from({ length: s.duration_days }, (_, i) => addDays(s.start_date, i));
+/**
+ * Computes the workshop timeline with active days and holidays.
+ * Holidays do NOT increment the active day number.
+ * Active days are assigned sequential day numbers (Day 1, Day 2, Day 3...).
+ * The timeline automatically encompasses the configured duration_days of active sessions.
+ */
+export function computeWorkshopSchedule(
+  s: Pick<Settings, "start_date" | "duration_days">,
+  configuredDays: WorkshopDayRecord[] | Record<string, { is_active: boolean; topic?: string | null }> = {},
+  today: string = todayLocal()
+): WorkshopCalendarDay[] {
+  const configMap = new Map<string, { is_active: boolean; topic?: string | null }>();
+  if (Array.isArray(configuredDays)) {
+    configuredDays.forEach((d) => {
+      configMap.set(d.day_date, { is_active: d.is_active, topic: d.topic });
+    });
+  } else if (configuredDays && typeof configuredDays === "object") {
+    Object.entries(configuredDays).forEach(([k, v]) => {
+      configMap.set(k, v);
+    });
+  }
+
+  const schedule: WorkshopCalendarDay[] = [];
+  let currentDate = s.start_date;
+  let activeCount = 0;
+  const targetActiveDays = Math.max(1, s.duration_days || 30);
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  // Safeguard against infinite loops: at most 365 calendar days
+  let iteration = 0;
+  while (activeCount < targetActiveDays && iteration < 365) {
+    iteration++;
+    const cfg = configMap.get(currentDate);
+    const isExplicitlyInactive = cfg ? cfg.is_active === false : false;
+    const dt = new Date(currentDate + "T00:00:00Z");
+    const dayOfWeek = dt.getUTCDay();
+
+    if (isExplicitlyInactive) {
+      schedule.push({
+        date: currentDate,
+        dayNumber: null,
+        isActive: false,
+        holidayReason: cfg?.topic || "Non-Working Day / Holiday",
+        isToday: currentDate === today,
+        dayOfWeek,
+        dayName: dayNames[dayOfWeek],
+      });
+    } else {
+      activeCount++;
+      schedule.push({
+        date: currentDate,
+        dayNumber: activeCount,
+        isActive: true,
+        holidayReason: null,
+        isToday: currentDate === today,
+        dayOfWeek,
+        dayName: dayNames[dayOfWeek],
+      });
+    }
+
+    currentDate = addDays(currentDate, 1);
+  }
+
+  // Also include any explicitly configured days that fall beyond the target active days
+  configMap.forEach((cfg, date) => {
+    if (date >= currentDate && !schedule.some((d) => d.date === date)) {
+      const dt = new Date(date + "T00:00:00Z");
+      const dayOfWeek = dt.getUTCDay();
+      schedule.push({
+        date,
+        dayNumber: cfg.is_active ? ++activeCount : null,
+        isActive: cfg.is_active,
+        holidayReason: cfg.is_active ? null : (cfg.topic || "Non-Working Day / Holiday"),
+        isToday: date === today,
+        dayOfWeek,
+        dayName: dayNames[dayOfWeek],
+      });
+    }
+  });
+
+  return schedule.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function dayState(day: string, today: string, status?: AttStatus | null): DayState {
+export function workshopDays(
+  s: Pick<Settings, "start_date" | "duration_days">,
+  configuredDays?: WorkshopDayRecord[] | Record<string, { is_active: boolean; topic?: string | null }>
+): string[] {
+  if (
+    !configuredDays ||
+    (Array.isArray(configuredDays) && configuredDays.length === 0) ||
+    (typeof configuredDays === "object" && Object.keys(configuredDays).length === 0)
+  ) {
+    return Array.from({ length: s.duration_days }, (_, i) => addDays(s.start_date, i));
+  }
+  const schedule = computeWorkshopSchedule(s, configuredDays);
+  return schedule.filter((d) => d.isActive).map((d) => d.date);
+}
+
+export function dayState(
+  day: string,
+  today: string,
+  status?: AttStatus | null,
+  isHoliday = false
+): DayState {
+  if (isHoliday) return "Holiday";
   if (status === "present") return "Present";
   if (status === "excused") return "Excused";
   if (status === "pending") return "Pending";
@@ -161,9 +278,16 @@ export function summarize(
   s: Pick<Settings, "start_date" | "duration_days">,
   records: { day_date: string; status: AttStatus }[],
   today: string = todayLocal(),
+  configuredDays?: WorkshopDayRecord[] | Record<string, { is_active: boolean; topic?: string | null }>
 ): Summary {
   const byDay = new Map(records.map((r) => [r.day_date, r.status]));
-  const states = workshopDays(s).map((day) => ({ day, state: dayState(day, today, byDay.get(day)) }));
+  const schedule = computeWorkshopSchedule(s, configuredDays, today);
+  const activeDays = schedule.filter((d) => d.isActive);
+
+  const states = schedule.map((d) => ({
+    day: d.date,
+    state: dayState(d.date, today, byDay.get(d.date), !d.isActive),
+  }));
   const count = (st: DayState) => states.filter((x) => x.state === st).length;
   const present = count("Present");
   const absent = count("Absent");
@@ -171,11 +295,11 @@ export function summarize(
   const excused = count("Excused");
   const remaining = count("Not Held") + count("Open");
   const closedNonExcused = states.filter(
-    (x) => x.day < today && x.state !== "Excused",
+    (x) => x.day < today && x.state !== "Excused" && x.state !== "Holiday",
   ).length;
   const todayPresent = states.some((x) => x.day === today && x.state === "Present") ? 1 : 0;
   const eligible = closedNonExcused + todayPresent;
-  const total = s.duration_days - excused;
+  const total = activeDays.length - excused;
   return {
     present,
     absent,
@@ -183,7 +307,7 @@ export function summarize(
     excused,
     remaining,
     eligible,
-    total,
+    total: Math.max(0, total),
     currentPct: eligible ? round2((present / eligible) * 100) : 0,
     finalPct: total ? round2((present / total) * 100) : 0,
     states,
