@@ -416,9 +416,10 @@ export function AdminQrScannerTab({
     }
   };
 
-  // Handle mode change
+  // Handle mode change: switch modes without auto-starting camera unless camera is already active
   const handleModeChange = useCallback(
     (mode: "qr" | "face") => {
+      const wasActive = qrScannerActive || faceCameraActive;
       stopQrCamera();
       stopFaceCamera();
       setInternalMode(mode);
@@ -427,34 +428,52 @@ export function AdminQrScannerTab({
       setQrConfirmedResult(null);
       setFaceResult(null);
 
-      if (mode === "qr") {
-        void startQrCamera();
-      } else {
-        void startFaceCamera();
+      // Only continue camera stream if user had already started the camera
+      if (wasActive) {
+        if (mode === "qr") {
+          void startQrCamera();
+        } else {
+          void startFaceCamera();
+        }
       }
     },
-    [stopQrCamera, stopFaceCamera, onModeChange, startQrCamera, startFaceCamera],
+    [stopQrCamera, stopFaceCamera, onModeChange, startQrCamera, startFaceCamera, qrScannerActive, faceCameraActive],
   );
 
-  // Auto-start camera directly when tab becomes active, mode changes externally, or header buttons are clicked
+  // Stop camera when tab becomes inactive
   useEffect(() => {
-    if (isTabActive === false) {
+    if (!isTabActive) {
       stopQrCamera();
       stopFaceCamera();
-      return;
     }
+  }, [isTabActive, stopQrCamera, stopFaceCamera]);
 
-    if (activeMode === "qr") {
-      stopFaceCamera();
-      void startQrCamera(qrFacingMode);
-    } else if (activeMode === "face") {
+  // Clean up media streams on component unmount
+  useEffect(() => {
+    return () => {
       stopQrCamera();
-      void startFaceCamera(faceFacingMode);
+      stopFaceCamera();
+    };
+  }, [stopQrCamera, stopFaceCamera]);
+
+  // Explicit user trigger (e.g. external button incrementing cameraTrigger)
+  const prevTriggerRef = useRef(cameraTrigger);
+  useEffect(() => {
+    if (cameraTrigger > 0 && cameraTrigger !== prevTriggerRef.current) {
+      prevTriggerRef.current = cameraTrigger;
+      if (isTabActive) {
+        if (activeMode === "qr") {
+          stopFaceCamera();
+          void startQrCamera(qrFacingMode);
+        } else if (activeMode === "face") {
+          stopQrCamera();
+          void startFaceCamera(faceFacingMode);
+        }
+      }
     }
   }, [
-    isTabActive,
-    controlledMode,
     cameraTrigger,
+    isTabActive,
     activeMode,
     qrFacingMode,
     faceFacingMode,
@@ -759,7 +778,7 @@ export function AdminQrScannerTab({
           </Card>
 
           {/* QR Camera Video Window */}
-          {qrScannerActive && (
+          {qrScannerActive ? (
             <Card className="overflow-hidden border-2 border-primary/40 shadow-lg">
               <div className="relative bg-black flex flex-col items-center justify-center min-h-[340px] md:min-h-[420px]">
                 {qrCameraLoading && (
@@ -793,6 +812,25 @@ export function AdminQrScannerTab({
                   </Badge>
                 </div>
               </div>
+            </Card>
+          ) : (
+            <Card className="border border-dashed p-8 text-center space-y-4 bg-muted/20">
+              <div className="h-12 w-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                <Camera className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-semibold text-foreground text-sm">Camera is Inactive</h3>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  Camera does not start automatically. Click the button below to turn on the camera and scan attendee QR codes, or verify with the manual input above.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => void startQrCamera()}
+                className="gap-2 font-bold bg-primary text-primary-foreground shadow-xs cursor-pointer"
+              >
+                <Camera className="h-4 w-4" /> Start QR Scanner
+              </Button>
             </Card>
           )}
 

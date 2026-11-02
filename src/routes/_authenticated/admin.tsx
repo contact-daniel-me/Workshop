@@ -140,10 +140,10 @@ function AdminPage() {
   const { data: settings } = useSettings();
   const { data: adminData, isLoading: dataLoading, refetch } = useAdminData();
 
-  // Active Tab & Verification Console Mode (Default to taking attendance)
-  const [activeTab, setActiveTab] = useState("scanner");
+  // Active Tab & Verification Console Mode (Default to Overview & Analytics so opening Admin does not trigger camera)
+  const [activeTab, setActiveTab] = useState("overview");
   const [verificationMode, setVerificationMode] = useState<"qr" | "face">("qr");
-  const [cameraTrigger, setCameraTrigger] = useState(1);
+  const [cameraTrigger, setCameraTrigger] = useState(0);
   const [qrScannerDialogOpen, setQrScannerDialogOpen] = useState(false);
   const [faceRecognitionDialogOpen, setFaceRecognitionDialogOpen] = useState(false);
 
