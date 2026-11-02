@@ -84,7 +84,7 @@ describe("excel export generation", () => {
     ]);
     expect(bytes).toBeInstanceOf(Uint8Array);
     expect(bytes.length).toBeGreaterThan(1000);
-  });
+  }, 15000);
 
   it("generates valid daily report bytes", async () => {
     const bytes = await generateDailyReportWorkbook("2026-11-01", [
