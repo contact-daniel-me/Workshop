@@ -30,6 +30,7 @@ import {
   Mail,
   Phone,
   User,
+  QrCode,
   Sparkles,
   ExternalLink,
 } from "lucide-react";
