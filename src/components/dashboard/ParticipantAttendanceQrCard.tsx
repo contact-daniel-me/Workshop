@@ -1,22 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Link } from "@tanstack/react-router";
 import QRCode from "qrcode";
 import { getParticipantDailyQr, type ParticipantQrResponse } from "@/lib/attendance-qr.server";
 import { getNextSessionUnlockTime } from "@/lib/attendance";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
 import {
   QrCode,
   CheckCircle2,
   Clock,
-  AlertCircle,
   RefreshCw,
   ShieldCheck,
   CalendarDays,
-  Sparkles,
   Camera,
+  IdCard,
+  FileSpreadsheet,
+  Copy,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,66 +31,19 @@ interface Props {
   todayDate: string;
   isWorkshopDay: boolean;
   isLastWorkshopDay?: boolean;
+  todayRecord?: {
+    status: string;
+    checked_in_at?: string | null;
+  } | null;
+  workshopName?: string;
+  workshopStartDate?: string;
+  workshopDurationDays?: number;
   onAttendanceUpdated?: () => void;
   onOpenScanner?: () => void;
-}
-
-function SessionCountdownTimer({
-  hours,
-  minutes,
-  seconds,
-  title = "Next QR code will generate at 12:00 AM",
-  subtitle,
-}: {
-  hours: number;
-  minutes: number;
-  seconds: number;
-  title?: string;
-  subtitle?: string;
-}) {
-  return (
-    <div className="flex flex-col items-center p-5 rounded-2xl border-2 border-primary/20 bg-muted/30 shadow-xs max-w-md w-full space-y-3.5 text-center">
-      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold">
-        <Clock className="h-3.5 w-3.5 shrink-0" />
-        <span>{title}</span>
-      </div>
-
-      <div className="flex items-center justify-center gap-2 sm:gap-3 font-mono">
-        <div className="flex flex-col items-center bg-card border rounded-xl px-3 py-2 min-w-[62px] sm:min-w-[68px] shadow-xs">
-          <span className="text-2xl sm:text-3xl font-extrabold text-foreground">
-            {String(hours).padStart(2, "0")}
-          </span>
-          <span className="text-[10px] text-muted-foreground uppercase font-sans tracking-wider font-semibold">
-            Hours
-          </span>
-        </div>
-        <span className="text-2xl font-bold text-muted-foreground -mt-3.5">:</span>
-        <div className="flex flex-col items-center bg-card border rounded-xl px-3 py-2 min-w-[62px] sm:min-w-[68px] shadow-xs">
-          <span className="text-2xl sm:text-3xl font-extrabold text-foreground">
-            {String(minutes).padStart(2, "0")}
-          </span>
-          <span className="text-[10px] text-muted-foreground uppercase font-sans tracking-wider font-semibold">
-            Mins
-          </span>
-        </div>
-        <span className="text-2xl font-bold text-muted-foreground -mt-3.5">:</span>
-        <div className="flex flex-col items-center bg-card border rounded-xl px-3 py-2 min-w-[62px] sm:min-w-[68px] shadow-xs">
-          <span className="text-2xl sm:text-3xl font-extrabold text-primary">
-            {String(seconds).padStart(2, "0")}
-          </span>
-          <span className="text-[10px] text-muted-foreground uppercase font-sans tracking-wider font-semibold">
-            Secs
-          </span>
-        </div>
-      </div>
-
-      {subtitle && (
-        <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
-          {subtitle}
-        </p>
-      )}
-    </div>
-  );
+  onOpenDigitalId?: () => void;
+  onDownloadExcel?: () => void;
+  onOpenPhotoModal?: () => void;
+  isStaff?: boolean;
 }
 
 export function ParticipantAttendanceQrCard({
@@ -100,75 +55,88 @@ export function ParticipantAttendanceQrCard({
   todayDate,
   isWorkshopDay,
   isLastWorkshopDay = false,
+  todayRecord,
+  workshopName,
+  workshopStartDate,
+  workshopDurationDays = 30,
   onAttendanceUpdated,
   onOpenScanner,
+  onOpenDigitalId,
+  onDownloadExcel,
+  onOpenPhotoModal,
+  isStaff = false,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [qrData, setQrData] = useState<ParticipantQrResponse | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [timeLeftSec, setTimeLeftSec] = useState<number>(0);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isApproved = verificationStatus === "verified";
   const timerRef = useRef<number | null>(null);
 
   // Fetch or retrieve participant's daily QR code
-  const fetchDailyQr = useCallback(async (isRefresh = false) => {
-    if (!isApproved || !isWorkshopDay) return;
-    setLoading(true);
-    setErrorMsg(null);
+  const fetchDailyQr = useCallback(
+    async (isRefresh = false) => {
+      if (!isApproved || !isWorkshopDay || !participantId) return;
+      setLoading(true);
+      setErrorMsg(null);
 
-    try {
-      const res = await getParticipantDailyQr({
-        data: { participantId },
-      });
+      try {
+        const res = await getParticipantDailyQr({
+          data: { participantId },
+        });
 
-      setQrData(res);
+        setQrData(res);
 
-      if (res.ok) {
-        if (res.code === "ACTIVE_QR" && res.token) {
-          // Generate QR code data URL
-          const url = await QRCode.toDataURL(res.token, {
-            width: 320,
-            margin: 2,
-            color: {
-              dark: "#042f2e", // Deep teal brand color
-              light: "#ffffff",
-            },
-          });
-          setQrDataUrl(url);
+        if (res.ok) {
+          if (res.code === "ACTIVE_QR" && res.token) {
+            const url = await QRCode.toDataURL(res.token, {
+              width: 320,
+              margin: 2,
+              color: {
+                dark: "#042f2e", // Deep brand teal
+                light: "#ffffff",
+              },
+            });
+            setQrDataUrl(url);
 
-          // Calculate remaining validity in seconds
-          if (res.expiresAt) {
-            const diff = Math.max(0, Math.floor((new Date(res.expiresAt).getTime() - Date.now()) / 1000));
-            setTimeLeftSec(diff);
+            if (res.expiresAt) {
+              const diff = Math.max(
+                0,
+                Math.floor((new Date(res.expiresAt).getTime() - Date.now()) / 1000)
+              );
+              setTimeLeftSec(diff);
+            }
+            if (isRefresh) {
+              toast.success("Attendance QR refreshed!");
+            }
+          } else if (res.code === "ALREADY_PRESENT") {
+            onAttendanceUpdated?.();
           }
-          if (isRefresh) {
-            toast.success("Attendance QR refreshed!");
+        } else {
+          if (res.code !== "LOCKED_UNTIL_SESSION_TIME") {
+            setErrorMsg(res.message);
           }
-        } else if (res.code === "ALREADY_PRESENT") {
-          onAttendanceUpdated?.();
         }
-      } else {
-        if (res.code !== "LOCKED_UNTIL_SESSION_TIME") {
-          setErrorMsg(res.message);
-        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to load attendance QR";
+        setErrorMsg(msg);
+        toast.error(msg);
+      } finally {
+        setLoading(false);
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load attendance QR";
-      setErrorMsg(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [participantId, isApproved, isWorkshopDay, onAttendanceUpdated]);
+    },
+    [participantId, isApproved, isWorkshopDay, onAttendanceUpdated]
+  );
 
   // Initial load
   useEffect(() => {
     void fetchDailyQr();
   }, [fetchDailyQr]);
 
-  // Expiration countdown timer for active QR token
+  // Expiration countdown timer
   useEffect(() => {
     if (timerRef.current) window.clearInterval(timerRef.current);
 
@@ -177,6 +145,7 @@ export function ParticipantAttendanceQrCard({
         setTimeLeftSec((prev) => {
           if (prev <= 1) {
             if (timerRef.current) window.clearInterval(timerRef.current);
+            void fetchDailyQr(true); // Auto-refresh when expired
             return 0;
           }
           return prev - 1;
@@ -187,11 +156,10 @@ export function ParticipantAttendanceQrCard({
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
     };
-  }, [timeLeftSec]);
+  }, [timeLeftSec, fetchDailyQr]);
 
-  // Auto-refresh when expired if user is viewing
-  const isExpired = qrData?.code === "ACTIVE_QR" && timeLeftSec <= 0 && !!qrData?.expiresAt;
-  const isAlreadyPresent = qrData?.code === "ALREADY_PRESENT" || qrData?.alreadyMarked;
+  const isAlreadyPresent =
+    todayRecord?.status === "present" || qrData?.code === "ALREADY_PRESENT" || qrData?.alreadyMarked;
   const isLockedUntilNoon = qrData?.code === "LOCKED_UNTIL_SESSION_TIME";
 
   // Session unlock countdown timer (to 12:00 AM Midnight IST)
@@ -223,7 +191,6 @@ export function ParticipantAttendanceQrCard({
       setUnlockTimeLeftSec(remaining);
       if (remaining <= 0) {
         window.clearInterval(interval);
-        // Automatically fetch QR once 12:00 AM is reached!
         void fetchDailyQr(true);
       }
     }, 1000);
@@ -233,48 +200,46 @@ export function ParticipantAttendanceQrCard({
 
   const unlockHours = Math.floor(unlockTimeLeftSec / 3600);
   const unlockMinutes = Math.floor((unlockTimeLeftSec % 3600) / 60);
-  const unlockSeconds = unlockTimeLeftSec % 60;
 
   const minutes = Math.floor(timeLeftSec / 60);
   const seconds = timeLeftSec % 60;
   const formattedTimeLeft = `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
+  const handleCopyCode = (code: string) => {
+    void navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    toast.success(`Copied code: ${code}`);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
   return (
-    <Card className="overflow-hidden border-2 border-primary/20 bg-gradient-to-b from-card to-primary/[0.02] shadow-md">
-      {/* Card Header */}
-      <CardHeader className="border-b bg-muted/30 pb-4">
+    <Card className="overflow-hidden border border-border/80 bg-card rounded-2xl shadow-sm">
+      {/* Card Header: Brand identity & Today's Attendance State */}
+      <CardHeader className="border-b bg-muted/30 py-3.5 px-5 sm:px-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-              <QrCode className="h-5 w-5" />
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <QrCode className="h-4 w-4" />
             </div>
             <div>
-              <CardTitle className="font-display text-xl font-bold flex items-center gap-2">
-                My Attendance QR
-                <Badge className="bg-primary/10 text-primary border-primary/20 text-[11px] font-mono">
+              <CardTitle className="font-display text-lg sm:text-xl font-bold flex items-center gap-2">
+                <span>My Attendance QR</span>
+                <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px] font-mono uppercase tracking-wider">
                   DAILY TOKEN
                 </Badge>
               </CardTitle>
               <CardDescription className="text-xs">
                 Session Date: <span className="font-mono font-semibold text-foreground">{todayDate}</span>
+                {workshopName && <span> • {workshopName}</span>}
               </CardDescription>
             </div>
           </div>
 
-          {/* Status Badge & Scan Trigger */}
+          {/* Today's Status Badge */}
           <div className="flex items-center gap-2">
-            {!isAlreadyPresent && !isLockedUntilNoon && isWorkshopDay && isApproved && onOpenScanner && (
-              <Button
-                size="sm"
-                onClick={onOpenScanner}
-                className="gap-1.5 font-bold text-xs bg-primary text-primary-foreground shadow-xs h-8"
-              >
-                <Camera className="h-3.5 w-3.5" /> Scan Screen
-              </Button>
-            )}
             {isAlreadyPresent ? (
-              <Badge className="bg-emerald-600 text-white gap-1.5 px-3 py-1 font-semibold text-xs">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Present
+              <Badge className="bg-emerald-600 text-white gap-1.5 px-3 py-1 font-semibold text-xs shadow-2xs">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Present Today
               </Badge>
             ) : isLockedUntilNoon ? (
               <Badge variant="outline" className="border-primary/40 bg-primary/5 text-primary gap-1.5 px-3 py-1 font-semibold text-xs">
@@ -282,7 +247,7 @@ export function ParticipantAttendanceQrCard({
               </Badge>
             ) : isWorkshopDay ? (
               <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800 gap-1.5 px-3 py-1 font-semibold text-xs">
-                <Clock className="h-3.5 w-3.5 text-amber-600" /> Not Marked
+                <Clock className="h-3.5 w-3.5 text-amber-600" /> Attendance Not Marked
               </Badge>
             ) : (
               <Badge variant="secondary" className="text-xs">
@@ -293,109 +258,14 @@ export function ParticipantAttendanceQrCard({
         </div>
       </CardHeader>
 
-      <CardContent className="p-6">
-        {/* Case 1: Attendance Already Marked for Today */}
-        {isAlreadyPresent ? (
-          <div className="flex flex-col items-center justify-center py-6 text-center space-y-5">
-            <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 flex items-center justify-center shadow-inner">
-              <CheckCircle2 className="h-8 w-8" />
-            </div>
-            <div className="space-y-1.5 max-w-sm">
-              <h3 className="font-display text-2xl font-bold text-foreground">
-                Attendance Recorded!
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                You are marked <strong className="text-emerald-600 font-semibold">PRESENT</strong> for today's workshop session ({todayDate}).
-              </p>
-              {qrData?.checkedInAt && (
-                <div className="pt-1">
-                  <Badge variant="outline" className="font-mono text-xs text-muted-foreground bg-muted/40">
-                    Checked in at: {new Date(qrData.checkedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </Badge>
-                </div>
-              )}
-            </div>
-
-            {/* Next Day QR Code Generation & Countdown Timer */}
-            {!isLastWorkshopDay ? (
-              <SessionCountdownTimer
-                hours={unlockHours}
-                minutes={unlockMinutes}
-                seconds={unlockSeconds}
-                title="Next QR code will generate at 12:00 AM"
-                subtitle="Your attendance QR code for the next session will automatically become available tomorrow at 12:00 AM."
-              />
-            ) : (
-              <div className="p-4 rounded-xl border bg-muted/30 text-xs text-muted-foreground max-w-xs">
-                You have completed all scheduled workshop sessions! Thank you for your active participation.
-              </div>
-            )}
-          </div>
-        ) : isLockedUntilNoon ? (
-          /* Case 1B: Workshop day, but before 12:00 AM (Locked) */
-          <div className="flex flex-col items-center justify-center py-8 text-center space-y-5">
-            <div className="h-16 w-16 rounded-full bg-primary/10 text-primary flex items-center justify-center shadow-inner">
-              <Clock className="h-8 w-8" />
-            </div>
-            <div className="space-y-1.5 max-w-sm">
-              <h3 className="font-display text-2xl font-bold text-foreground">
-                Session Opens at 12:00 AM
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Today's workshop attendance session ({todayDate}) opens at 12:00 AM.
-              </p>
-            </div>
-
-            <SessionCountdownTimer
-              hours={unlockHours}
-              minutes={unlockMinutes}
-              seconds={unlockSeconds}
-              title="Next QR code will generate at 12:00 AM"
-              subtitle="The countdown is active. Your personal attendance QR code will automatically unlock and appear when the timer reaches zero."
-            />
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void fetchDailyQr(true)}
-              disabled={loading}
-              className="gap-1.5 text-xs font-semibold"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh Status
-            </Button>
-          </div>
-        ) : !isWorkshopDay ? (
-          /* Case 2: No Workshop Session Scheduled */
-          <div className="flex flex-col items-center justify-center py-8 text-center space-y-3">
-            <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
-              <CalendarDays className="h-7 w-7" />
-            </div>
-            <div className="space-y-1 max-w-sm">
-              <h3 className="font-display text-lg font-bold text-foreground">No Session Scheduled</h3>
-              <p className="text-xs text-muted-foreground">
-                There is no workshop session scheduled for today ({todayDate}). Check the workshop calendar for upcoming sessions.
-              </p>
-            </div>
-          </div>
-        ) : !isApproved ? (
-          /* Case 3: Registration Pending / Rejected */
-          <div className="flex flex-col items-center justify-center py-8 text-center space-y-3">
-            <div className="h-14 w-14 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
-              <Clock className="h-7 w-7" />
-            </div>
-            <div className="space-y-1 max-w-sm">
-              <h3 className="font-display text-lg font-bold text-foreground">Approval Required</h3>
-              <p className="text-xs text-muted-foreground">
-                Your profile must be approved by an administrator before an attendance QR can be generated.
-              </p>
-            </div>
-          </div>
-        ) : (
-          /* Case 4: Active QR Ready for Administrator Scanning */
-          <div className="flex flex-col-reverse lg:flex-row items-center justify-between gap-8">
-            {/* Left side: Participant info card */}
-            <div className="flex-1 space-y-4 w-full">
-              <div className="flex items-center gap-4 p-4 rounded-xl border bg-card/60 shadow-xs">
+      <CardContent className="p-5 sm:p-6">
+        {/* Two-Column Layout on Desktop, Mobile-First (QR Code appears first on mobile) */}
+        <div className="flex flex-col-reverse lg:flex-row items-center lg:items-start justify-between gap-6 lg:gap-8">
+          {/* LEFT COLUMN: Participant Information & Attendance Actions */}
+          <div className="flex-1 space-y-5 w-full">
+            {/* Participant Profile Details Card */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-xl border bg-muted/20">
+              <div className="relative shrink-0">
                 <ClickableAvatar
                   src={photoUrl}
                   alt={fullName}
@@ -403,91 +273,215 @@ export function ParticipantAttendanceQrCard({
                   participantCode={participantCode}
                   verificationStatus={verificationStatus}
                   fallback={fullName.slice(0, 2).toUpperCase()}
-                  className="h-24 w-24 sm:h-28 sm:w-28 rounded-2xl border-2 border-primary/20 shrink-0 shadow-sm"
-                  fallbackClassName="text-2xl font-bold"
+                  className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl border-2 border-primary/20 shadow-xs object-cover"
+                  fallbackClassName="text-2xl font-bold bg-muted text-foreground"
                 />
-                <div className="min-w-0 flex-1">
-                  <h4 className="font-display text-lg font-bold text-foreground truncate">{fullName}</h4>
-                  <p className="text-xs font-mono font-semibold text-primary">{participantCode}</p>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[11px] font-medium text-muted-foreground">
-                      Verified Participant
-                    </span>
-                  </div>
-                </div>
+                {onOpenPhotoModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenPhotoModal}
+                    className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:scale-110 transition-transform cursor-pointer z-10"
+                    title="Upload or change profile photograph"
+                  >
+                    <Camera className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
 
-              {/* Instructions banner with 2 check-in methods */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
-                <p className="text-xs font-bold text-primary flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4" /> Two Ways to Check In Today:
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-display text-xl sm:text-2xl font-bold text-foreground truncate">
+                    {fullName}
+                  </h3>
+                  <Badge variant="outline" className="font-mono text-xs font-semibold bg-card border">
+                    {participantCode}
+                  </Badge>
+                  <Badge
+                    className={
+                      isApproved
+                        ? "bg-success text-success-foreground font-semibold text-[11px]"
+                        : "bg-warning text-warning-foreground font-semibold text-[11px]"
+                    }
+                  >
+                    {verificationStatus.toUpperCase()}
+                  </Badge>
+                </div>
+
+                {/* Workshop details line */}
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                  <span>{workshopName || "Workshop"}</span>
+                  {workshopStartDate && (
+                    <>
+                      <span>•</span>
+                      <span>Start: {workshopStartDate}</span>
+                    </>
+                  )}
+                  <span>•</span>
+                  <span>{workshopDurationDays} Days Total</span>
                 </p>
-                <div className="space-y-2 text-xs text-foreground/90 leading-relaxed">
-                  <div>
-                    <strong className="text-foreground">Method 1 (Self Scan):</strong> If the workshop organizer is displaying the daily rotating QR code on the venue screen, tap below to scan it with your camera or enter the 6-character code.
-                    {onOpenScanner && (
-                      <Button
-                        type="button"
-                        onClick={onOpenScanner}
-                        className="w-full gap-2 font-bold bg-primary text-primary-foreground mt-2 shadow-xs"
-                        size="sm"
-                      >
-                        <Camera className="h-4 w-4" /> Scan Presenter Screen / Enter Code
-                      </Button>
-                    )}
-                  </div>
-                  <div className="pt-1 border-t border-primary/10">
-                    <strong className="text-foreground">Method 2 (Organizer Scan):</strong> Alternatively, present your personal QR code on the right to the workshop administrator to scan.
-                  </div>
+
+                {/* Today's status alert / callout */}
+                <div className="pt-1">
+                  {isAlreadyPresent ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 text-xs font-medium">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Verified Present today
+                        {qrData?.checkedInAt
+                          ? ` at ${new Date(qrData.checkedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                          : ""}.
+                      </span>
+                    </div>
+                  ) : isLockedUntilNoon ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20 text-xs font-medium">
+                      <Clock className="h-4 w-4 shrink-0" />
+                      <span>Today's session opens at 12:00 AM. QR unlocks automatically.</span>
+                    </div>
+                  ) : isWorkshopDay ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 text-xs font-medium">
+                      <Clock className="h-4 w-4 shrink-0" />
+                      <span>Present this QR code to the workshop administrator to check in today.</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-muted text-muted-foreground border text-xs">
+                      <CalendarDays className="h-4 w-4 shrink-0" />
+                      <span>No workshop session scheduled for today.</span>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* Token Info & Short Code */}
-              {qrData?.shortCode && (
-                <div className="p-3 rounded-lg border bg-muted/40 flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground font-medium">Backup Short Code:</span>
-                  <span className="font-mono font-extrabold text-sm tracking-wider text-primary">
-                    {qrData.shortCode}
-                  </span>
-                </div>
-              )}
             </div>
 
-            {/* Right side: QR Code Display & Countdown */}
-            <div className="flex flex-col items-center justify-center p-4 bg-muted/20 rounded-2xl border w-full lg:w-auto shrink-0 space-y-3">
-              {loading ? (
-                <div className="h-60 w-60 rounded-xl bg-muted/60 flex flex-col items-center justify-center gap-2">
-                  <RefreshCw className="h-7 w-7 animate-spin text-primary" />
-                  <span className="text-xs font-medium text-muted-foreground">Generating secure QR…</span>
+            {/* Attendance Actions: Clean Horizontal Row */}
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Attendance Actions
+              </p>
+              <div className="flex flex-wrap items-center gap-2.5">
+                {onOpenScanner && isApproved && isWorkshopDay && (
+                  <Button
+                    size="sm"
+                    onClick={onOpenScanner}
+                    className="h-10 px-4 rounded-xl font-bold bg-primary text-primary-foreground hover:bg-primary/90 gap-2 shadow-xs cursor-pointer text-xs sm:text-sm"
+                  >
+                    <Camera className="h-4 w-4" />
+                    <span>Scan Presenter Screen / Enter Code</span>
+                  </Button>
+                )}
+
+                {onOpenDigitalId && (
+                  <Button
+                    size="sm"
+                    onClick={onOpenDigitalId}
+                    className="h-10 px-4 rounded-xl font-bold bg-emerald-700 hover:bg-emerald-800 text-white gap-2 shadow-xs cursor-pointer text-xs sm:text-sm"
+                  >
+                    <IdCard className="h-4 w-4 text-white shrink-0" />
+                    <span className="text-white">My Digital ID</span>
+                  </Button>
+                )}
+
+                {onDownloadExcel && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onDownloadExcel}
+                    className="h-10 px-4 rounded-xl font-semibold gap-2 border-border hover:bg-muted text-foreground cursor-pointer text-xs sm:text-sm"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>Download Attendance Report</span>
+                  </Button>
+                )}
+
+                {isStaff && (
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="h-10 px-4 rounded-xl font-semibold gap-2 border-border text-foreground text-xs sm:text-sm"
+                  >
+                    <Link to="/admin">
+                      <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                      <span>Admin Portal</span>
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: Primary Attendance QR Code Card (Strongest Visual Emphasis) */}
+          <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
+            <div className="flex flex-col items-center justify-center p-4 sm:p-5 bg-muted/20 rounded-2xl border-2 border-primary/20 w-full sm:w-[320px] shrink-0 space-y-3 shadow-xs">
+              {isAlreadyPresent ? (
+                /* Verified Present State */
+                <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
+                  <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shadow-inner">
+                    <CheckCircle2 className="h-9 w-9" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-display text-lg font-bold text-foreground">Attendance Recorded!</h4>
+                    <p className="text-xs text-muted-foreground">
+                      You are marked <strong className="text-emerald-600">PRESENT</strong> for today's session.
+                    </p>
+                  </div>
+                  {!isLastWorkshopDay && (
+                    <div className="text-[11px] text-muted-foreground font-mono bg-card px-3 py-1 rounded-full border">
+                      Next QR unlocks in {unlockHours}h {unlockMinutes}m
+                    </div>
+                  )}
                 </div>
-              ) : isExpired ? (
-                <div className="h-60 w-60 rounded-xl border-2 border-dashed border-destructive/40 bg-destructive/5 flex flex-col items-center justify-center p-4 text-center space-y-2">
-                  <AlertCircle className="h-8 w-8 text-destructive" />
-                  <p className="text-xs font-bold text-destructive">QR Token Expired</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    QR codes expire periodically for security. Click below to generate a fresh one.
-                  </p>
+              ) : isLockedUntilNoon ? (
+                /* Locked Until Midnight State */
+                <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
+                  <div className="h-14 w-14 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                    <Clock className="h-7 w-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-display text-base font-bold text-foreground">Session Opens at 12:00 AM</h4>
+                    <p className="text-xs text-muted-foreground">Your attendance QR will unlock automatically.</p>
+                  </div>
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => void fetchDailyQr(true)}
-                    className="h-8 text-xs gap-1.5 mt-1 font-semibold"
+                    disabled={loading}
+                    className="h-8 text-xs gap-1.5 cursor-pointer"
                   >
-                    <RefreshCw className="h-3.5 w-3.5" /> Refresh QR Code
+                    <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh Status
                   </Button>
                 </div>
-              ) : qrDataUrl ? (
-                <div className="space-y-3 text-center">
-                  <div className="relative rounded-2xl border-2 border-primary/30 bg-white p-3 shadow-lg inline-block">
-                    <img
-                      src={qrDataUrl}
-                      alt="My Attendance QR Code"
-                      className="h-56 w-56 object-contain rounded-lg"
-                    />
+              ) : !isWorkshopDay ? (
+                /* No Session State */
+                <div className="flex flex-col items-center justify-center py-8 text-center space-y-3">
+                  <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                    <CalendarDays className="h-7 w-7" />
+                  </div>
+                  <h4 className="font-display text-base font-bold text-foreground">No Session Today</h4>
+                  <p className="text-xs text-muted-foreground">Scheduled workshop days only.</p>
+                </div>
+              ) : (
+                /* Active Dynamic QR Code Pass */
+                <>
+                  <div className="relative rounded-2xl border-2 border-primary/30 bg-white p-3 shadow-md inline-block">
+                    {loading && !qrDataUrl ? (
+                      <div className="h-52 w-52 sm:h-56 sm:w-56 flex flex-col items-center justify-center gap-2 bg-muted/20 rounded-xl">
+                        <RefreshCw className="h-7 w-7 animate-spin text-primary" />
+                        <span className="text-xs font-mono text-muted-foreground">Generating QR…</span>
+                      </div>
+                    ) : qrDataUrl ? (
+                      <img
+                        src={qrDataUrl}
+                        alt="My Attendance QR Code"
+                        className="h-52 w-52 sm:h-56 sm:w-56 object-contain rounded-xl"
+                      />
+                    ) : (
+                      <div className="h-52 w-52 sm:h-56 sm:w-56 flex items-center justify-center bg-muted/20 rounded-xl">
+                        <QrCode className="h-10 w-10 text-muted-foreground" />
+                      </div>
+                    )}
                     <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-primary text-primary-foreground font-mono text-[10px] uppercase shadow-xs px-2 py-0.5">
-                        Scan to verify
+                      <Badge className="bg-primary text-primary-foreground font-mono text-[10px] tracking-wider uppercase shadow-xs px-2.5 py-0.5 whitespace-nowrap">
+                        SCAN TO VERIFY
                       </Badge>
                     </div>
                   </div>
@@ -502,40 +496,38 @@ export function ParticipantAttendanceQrCard({
                       </span>
                     </div>
                   </div>
-                </div>
-              ) : errorMsg ? (
-                <div className="h-60 w-60 rounded-xl border border-destructive/30 bg-destructive/5 flex flex-col items-center justify-center p-4 text-center space-y-2 text-destructive">
-                  <AlertCircle className="h-8 w-8" />
-                  <p className="text-xs font-bold">Failed to load QR</p>
-                  <p className="text-[11px] text-muted-foreground">{errorMsg}</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void fetchDailyQr(true)}
-                    className="h-8 text-xs gap-1.5"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" /> Retry
-                  </Button>
-                </div>
-              ) : null}
 
-              {/* Manual Refresh Action */}
-              {!isExpired && qrDataUrl && !loading && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void fetchDailyQr(true)}
-                  className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5"
-                >
-                  <RefreshCw className="h-3 w-3" /> Refresh QR
-                </Button>
+                  {/* Six-character verification code & Refresh action */}
+                  <div className="flex items-center justify-between w-full pt-1 px-1 text-xs">
+                    {qrData?.shortCode ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCode(qrData.shortCode!)}
+                        className="font-mono text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 bg-card border px-2 py-0.5 rounded cursor-pointer transition-colors"
+                        title="Click to copy 6-character code"
+                      >
+                        <span>Code: <strong className="font-bold text-foreground">{qrData.shortCode}</strong></span>
+                        {copiedCode ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+                      </button>
+                    ) : <div />}
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void fetchDailyQr(true)}
+                      disabled={loading}
+                      className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5 cursor-pointer px-2"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh QR
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
           </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
 }
-
