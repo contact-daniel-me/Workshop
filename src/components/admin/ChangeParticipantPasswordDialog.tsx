@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Lock, Eye, EyeOff, KeyRound, Check, RefreshCw, AlertCircle, Copy, ShieldAlert, FileDown } from "lucide-react";
+import { Lock, Eye, EyeOff, KeyRound, Check, RefreshCw, AlertCircle, Copy, ShieldAlert, FileDown, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { generateDefaultStudentPassword } from "@/lib/auth-helpers";
+import { normalizePhone } from "@/lib/attendance";
 
 interface Props {
   open: boolean;
@@ -34,6 +36,18 @@ export function ChangeParticipantPasswordDialog({
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [generatedTemp, setGeneratedTemp] = useState<string | null>(null);
+
+  const cleanPhone = participant?.phone ? normalizePhone(participant.phone) : "";
+  const autoDefaultPassword = generateDefaultStudentPassword(participant?.full_name || "User", cleanPhone);
+
+  const applyFormulaPassword = () => {
+    setNewPassword(autoDefaultPassword);
+    setConfirmPassword(autoDefaultPassword);
+    setGeneratedTemp(autoDefaultPassword);
+    setShowPassword(true);
+    void navigator.clipboard.writeText(autoDefaultPassword);
+    toast.success(`Default formula password (${autoDefaultPassword}) applied and copied!`);
+  };
 
   const generateStrongPassword = () => {
     const upper = "ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -65,8 +79,8 @@ export function ChangeParticipantPasswordDialog({
     e.preventDefault();
     if (!participant) return;
 
-    if (!newPassword || newPassword.length < 8) {
-      toast.error("Password must be at least 8 characters long.");
+    if (!newPassword || newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters long.");
       return;
     }
 
@@ -100,7 +114,7 @@ export function ChangeParticipantPasswordDialog({
   if (!participant) return null;
 
   const passwordsMatch = newPassword && confirmPassword && newPassword === confirmPassword;
-  const lengthValid = newPassword.length >= 8;
+  const lengthValid = newPassword.length >= 6;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,18 +145,29 @@ export function ChangeParticipantPasswordDialog({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          {/* Quick Generate Temporary Password Action */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground font-medium">Quick Generator:</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={generateStrongPassword}
-              className="h-7 text-xs gap-1.5 font-semibold text-primary"
-            >
-              <KeyRound className="h-3 w-3" /> Generate Temp Password
-            </Button>
+          {/* Quick Password Presets */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-xs text-muted-foreground font-medium">Quick Presets:</span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={applyFormulaPassword}
+                className="h-7 text-xs gap-1 font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border-emerald-300 bg-emerald-50/50 cursor-pointer"
+              >
+                <KeyRound className="h-3 w-3" /> Formula ({autoDefaultPassword})
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={generateStrongPassword}
+                className="h-7 text-xs gap-1 font-semibold text-primary cursor-pointer"
+              >
+                <RefreshCw className="h-3 w-3" /> Random
+              </Button>
+            </div>
           </div>
 
           {generatedTemp && (

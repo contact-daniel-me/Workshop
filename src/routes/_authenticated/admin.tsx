@@ -114,16 +114,7 @@ import { fileToBase64 } from "@/lib/image-validation";
 import { uploadRegistrationPhoto } from "@/lib/lookup.functions";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Legend,
-} from "recharts";
+import { AdminOverviewCharts } from "@/components/admin/AdminOverviewCharts";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   ssr: false,
@@ -140,8 +131,8 @@ function AdminPage() {
   const { data: settings } = useSettings();
   const { data: adminData, isLoading: dataLoading, refetch } = useAdminData();
 
-  // Active Tab & Verification Console Mode (Default to Overview & Analytics so opening Admin does not trigger camera)
-  const [activeTab, setActiveTab] = useState("overview");
+  // Active Tab & Verification Console Mode (Default to Attendance Management so camera never auto-starts and primary workflow is immediately accessible)
+  const [activeTab, setActiveTab] = useState("attendance_management");
   const [verificationMode, setVerificationMode] = useState<"qr" | "face">("qr");
   const [cameraTrigger, setCameraTrigger] = useState(0);
   const [qrScannerDialogOpen, setQrScannerDialogOpen] = useState(false);
@@ -323,7 +314,9 @@ function AdminPage() {
   }, [adminData?.activeQr]);
 
   const today = todayLocal();
-  const allDays = settings ? workshopDays(settings) : [];
+  const allDays = useMemo(() => {
+    return settings ? workshopDays(settings) : [];
+  }, [settings]);
 
   // KPI Calculations
   const totalRegistered = adminData?.profiles.length ?? 0;
@@ -942,47 +935,12 @@ function AdminPage() {
             </Card>
           </div>
 
-          {/* Charts Row */}
-          <div className="grid gap-6 lg:grid-cols-3">
-            <Card className="lg:col-span-2 shadow-sm">
-              <CardHeader>
-                <CardTitle className="font-display text-lg">30-Day Attendance Trends</CardTitle>
-                <CardDescription>Present vs Absent attendees per workshop day</CardDescription>
-              </CardHeader>
-              <CardContent className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dailyTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: "12px" }} />
-                    <Bar dataKey="present" name="Present" fill="#16a34a" stackId="a" />
-                    <Bar dataKey="pending" name="Pending" fill="#eab308" stackId="a" />
-                    <Bar dataKey="absent" name="Absent" fill="#ef4444" stackId="a" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="font-display text-lg">Attendance Distribution</CardTitle>
-                <CardDescription>Participant percentage brackets</CardDescription>
-              </CardHeader>
-              <CardContent className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={distributionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="range" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" name="Participants" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Analytics Charts (Robust native SVG charts, immune to React 19 hook mismatch) */}
+          <AdminOverviewCharts
+            dailyTrendData={dailyTrendData}
+            distributionData={distributionData}
+            totalRegistered={totalRegistered}
+          />
         </TabsContent>
 
 

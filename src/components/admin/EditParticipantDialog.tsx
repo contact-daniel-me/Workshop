@@ -78,8 +78,7 @@ export function EditParticipantDialog({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
 
-  // Password state
-  const [updatePassword, setUpdatePassword] = useState(false);
+  // Password state: if empty, existing password is kept. If filled, updates to that password.
   const [customPassword, setCustomPassword] = useState("");
 
   // Submission & Post-save state
@@ -110,7 +109,6 @@ export function EditParticipantDialog({
       setPhotoFile(null);
       setPhotoPreview(participant.photo_url || null);
       setRemovePhoto(false);
-      setUpdatePassword(false);
       setCustomPassword("");
       setSavedData(null);
     }
@@ -148,9 +146,12 @@ export function EditParticipantDialog({
       return;
     }
 
-    const passwordToSend = updatePassword
-      ? (customPassword.trim() || autoDefaultPassword)
-      : undefined;
+    const cleanPassword = customPassword.trim();
+    if (cleanPassword && cleanPassword.length < 6) {
+      toast.error("New password must be at least 6 characters.");
+      return;
+    }
+    const passwordToSend = cleanPassword || undefined;
 
     setSaving(true);
     try {
@@ -209,7 +210,7 @@ export function EditParticipantDialog({
       phone: cleanPhone || phone,
       verificationStatus,
       photoUrl: photoPreview,
-      rawPassword: updatePassword ? (customPassword.trim() || autoDefaultPassword) : undefined,
+      rawPassword: customPassword.trim() || autoDefaultPassword,
     };
 
     setDownloadingPdf(true);
@@ -239,7 +240,7 @@ export function EditParticipantDialog({
     const pPhone = savedData?.phone || cleanPhone || phone;
     const pEmail = savedData?.email || email;
     const pStatus = savedData?.verificationStatus || verificationStatus;
-    const pPassword = savedData?.rawPassword || (updatePassword ? customPassword || autoDefaultPassword : autoDefaultPassword);
+    const pPassword = savedData?.rawPassword || customPassword.trim() || autoDefaultPassword;
 
     const text = [
       `Event Management Portal — Updated Account Credentials`,
@@ -386,49 +387,59 @@ export function EditParticipantDialog({
               </div>
 
               {/* Password Management */}
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20 p-3 space-y-2.5">
-                <div className="flex items-center justify-between">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-300">
                     <Key className="h-3.5 w-3.5 text-emerald-600" />
-                    Default Formula Password: <code className="font-mono bg-emerald-100 dark:bg-emerald-900 px-1.5 py-0.5 rounded text-emerald-800">{autoDefaultPassword}</code>
+                    <span>Participant Login Password</span>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setUpdatePassword(!updatePassword)}
-                    className="h-6 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/60"
-                  >
-                    {updatePassword ? "Keep Existing Password" : "Reset / Set Password"}
-                  </Button>
-                </div>
-
-                {updatePassword && (
-                  <div className="space-y-2 pt-1 border-t border-emerald-200 dark:border-emerald-800">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold text-foreground">New Password</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCustomPassword(autoDefaultPassword)}
+                      className="h-6 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100 border-emerald-300 bg-white dark:bg-slate-900 cursor-pointer"
+                    >
+                      Use Formula ({autoDefaultPassword})
+                    </Button>
+                    {customPassword && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => setCustomPassword(autoDefaultPassword)}
-                        className="h-5 text-[10px] text-primary"
+                        onClick={() => setCustomPassword("")}
+                        className="h-6 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
                       >
-                        Use Formula ({autoDefaultPassword})
+                        Keep Existing
                       </Button>
-                    </div>
-                    <Input
-                      type="text"
-                      value={customPassword}
-                      onChange={(e) => setCustomPassword(e.target.value)}
-                      placeholder={`Leave blank to use ${autoDefaultPassword}`}
-                      className="font-mono text-sm bg-card"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Saving this will immediately update their Supabase authentication password so they can log in.
-                    </p>
+                    )}
                   </div>
-                )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Input
+                    type="text"
+                    value={customPassword}
+                    onChange={(e) => setCustomPassword(e.target.value)}
+                    placeholder="Leave blank to keep existing password"
+                    className="font-mono text-sm bg-card"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                    <span>
+                      Formula: <strong>{autoDefaultPassword}</strong> (1st 4 letters of name + 1st 4 digits of mobile)
+                    </span>
+                    {customPassword ? (
+                      <span className="text-emerald-600 font-semibold font-mono">
+                        ✓ Password will update on Save
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground italic">
+                        Existing password preserved
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Remarks */}
@@ -509,14 +520,17 @@ export function EditParticipantDialog({
                   <span className="text-muted-foreground block text-[10px]">Email Address:</span>
                   <span className="font-medium truncate block">{savedData.email || "None"}</span>
                 </div>
-                {savedData.rawPassword && (
-                  <div className="col-span-2 pt-1 border-t">
-                    <span className="text-muted-foreground block text-[10px]">Updated Password:</span>
-                    <code className="font-mono font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded text-xs border border-emerald-200">
-                      {savedData.rawPassword}
+                <div className="col-span-2 pt-1 border-t">
+                  <span className="text-muted-foreground block text-[10px]">Login Password:</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <code className="font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-xs border border-emerald-200">
+                      {savedData.rawPassword || autoDefaultPassword}
                     </code>
+                    <Badge variant="outline" className="text-[10px] font-mono text-emerald-700 border-emerald-200">
+                      {savedData.rawPassword ? "UPDATED" : "FORMULA DEFAULT"}
+                    </Badge>
                   </div>
-                )}
+                </div>
               </div>
             </div>
 

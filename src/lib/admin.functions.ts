@@ -775,8 +775,8 @@ export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
     const targetUserId = String(input.targetUserId ?? "").trim();
     const newPassword = String(input.newPassword ?? "");
     if (!targetUserId) throw new Error("Participant ID is required.");
-    if (!newPassword || newPassword.length < 8) {
-      throw new Error("Password must be at least 8 characters long.");
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error("Password must be at least 6 characters long.");
     }
     return { targetUserId, newPassword };
   })
@@ -1025,13 +1025,14 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
       throw new Error(`Failed to update profile: ${updateErr?.message || "Unknown error"}`);
     }
 
-    // 6. Synchronize Auth user metadata and password if provided
+    // 6. Synchronize Auth user metadata, confirmed email, and password if provided
     const authUpdatePayload: Record<string, unknown> = {
+      email_confirm: true,
       user_metadata: {
         full_name: data.fullName,
         phone: finalPhone,
         email: finalEmail,
-        remarks: data.remarks || undefined,
+        ...(data.remarks ? { remarks: data.remarks } : {}),
       },
     };
 
@@ -1042,13 +1043,16 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
     // If phone changed, update auth email identifier
     if (data.phone && data.phone !== currentProfile.phone) {
       authUpdatePayload.email = phoneToAuthEmail(finalPhone);
-      authUpdatePayload.email_confirm = true;
     }
 
-    try {
-      await supabaseAdmin.auth.admin.updateUserById(data.targetUserId, authUpdatePayload);
-    } catch (authErr: unknown) {
-      console.warn("Auth user update warning:", authErr);
+    const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(
+      data.targetUserId,
+      authUpdatePayload,
+    );
+
+    if (authErr) {
+      console.error("Auth updateUserById error:", authErr);
+      throw new Error(`Failed to update login credentials: ${authErr.message}`);
     }
 
     // 7. Write audit log entry
