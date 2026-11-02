@@ -392,7 +392,7 @@ export function ParticipantAttendanceQrCard({
           </div>
         ) : (
           /* Case 4: Active QR Ready for Administrator Scanning */
-          <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+          <div className="flex flex-col-reverse lg:flex-row items-center justify-between gap-8">
             {/* Left side: Participant info card */}
             <div className="flex-1 space-y-4 w-full">
               <div className="flex items-center gap-4 p-4 rounded-xl border bg-card/60 shadow-xs">

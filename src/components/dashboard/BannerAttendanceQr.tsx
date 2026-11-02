@@ -195,71 +195,62 @@ export function BannerAttendanceQr({
     );
   }
 
-  // State 5: Active Scannable Daily QR Code
+  // State 5: Active Scannable Daily QR Code (Matches screenshot design)
   return (
     <>
-      <div className="flex items-center gap-3 p-2.5 sm:p-3 rounded-xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.06] via-card to-card shadow-xs group hover:border-emerald-500/50 transition-all shrink-0">
-        {/* Scannable QR Code Thumbnail */}
+      <div className="flex flex-col items-center justify-center p-3.5 sm:p-4 bg-muted/20 rounded-2xl border w-full sm:w-auto shrink-0 space-y-2.5">
+        {/* Crisp QR Code Frame with centered SCAN TO VERIFY pill badge */}
         <div
           onClick={() => setEnlargeOpen(true)}
-          className="relative bg-white p-1 rounded-lg border border-slate-200/90 shadow-xs shrink-0 cursor-pointer hover:scale-105 transition-transform"
-          title="Click to enlarge Daily QR Pass"
+          className="relative rounded-2xl border-2 border-primary/30 bg-white p-3 shadow-md inline-block cursor-pointer hover:scale-[1.02] transition-transform"
+          title="Click to view enlarged QR"
         >
           {qrDataUrl ? (
             <img
               src={qrDataUrl}
-              alt="Daily Attendance QR"
-              className="h-[74px] w-[74px] sm:h-20 sm:w-20 object-contain"
+              alt="My Attendance QR Code"
+              className="h-44 w-44 sm:h-48 sm:w-48 object-contain rounded-lg"
             />
           ) : (
-            <div className="h-[74px] w-[74px] sm:h-20 sm:w-20 flex items-center justify-center bg-muted/20">
-              <QrCode className="h-8 w-8 text-muted-foreground" />
+            <div className="h-44 w-44 sm:h-48 sm:w-48 flex items-center justify-center bg-muted/20 rounded-lg">
+              <QrCode className="h-10 w-10 text-muted-foreground animate-pulse" />
             </div>
           )}
-          <div className="absolute inset-0 bg-black/0 hover:bg-black/10 rounded-lg flex items-center justify-center transition-colors">
-            <Maximize2 className="h-4 w-4 text-emerald-900 opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-sm" />
+          <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2">
+            <Badge className="bg-primary text-primary-foreground font-mono text-[10px] uppercase shadow-xs px-2.5 py-0.5 whitespace-nowrap">
+              SCAN TO VERIFY
+            </Badge>
           </div>
         </div>
 
-        {/* Live Status & Details */}
-        <div className="space-y-1 text-left">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] font-bold tracking-wider uppercase text-emerald-800 dark:text-emerald-300">
-              Daily Pass
+        {/* Countdown Timer */}
+        <div className="pt-2">
+          <div className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-muted-foreground bg-card border px-3 py-1 rounded-full shadow-xs">
+            <Clock className="h-3.5 w-3.5 text-primary" />
+            <span>Valid for: </span>
+            <span className={timeLeftSec < 120 ? "text-destructive font-bold" : "text-foreground font-bold"}>
+              {formattedTimeLeft}
             </span>
           </div>
+        </div>
 
-          {timeLeftSec > 0 && (
-            <p className="font-mono text-xs text-muted-foreground">
-              Expires in <span className="font-bold text-foreground">{formattedTimeLeft}</span>
-            </p>
-          )}
-
+        {/* Short Code & Refresh Button */}
+        <div className="flex items-center gap-3 text-xs">
           {qrData?.shortCode && (
-            <p className="font-mono text-xs text-muted-foreground">
-              Code: <span className="font-bold text-foreground bg-muted/80 px-1.5 py-0.5 rounded text-[11px]">{qrData.shortCode}</span>
-            </p>
+            <span className="font-mono text-muted-foreground text-[11px]">
+              Code: <strong className="font-bold text-foreground bg-muted px-1.5 py-0.5 rounded">{qrData.shortCode}</strong>
+            </span>
           )}
-
-          <div className="flex items-center gap-2 pt-0.5">
-            <button
-              type="button"
-              onClick={() => setEnlargeOpen(true)}
-              className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <Maximize2 className="h-3 w-3" /> Enlarge
-            </button>
-            <button
-              type="button"
-              onClick={() => void fetchDailyQr(true)}
-              disabled={loading}
-              className="text-[11px] font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
-              title="Refresh QR Code"
-            >
-              <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh
-            </button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void fetchDailyQr(true)}
+            disabled={loading}
+            className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1.5 cursor-pointer"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh QR
+          </Button>
         </div>
       </div>
 
@@ -339,3 +330,4 @@ export function BannerAttendanceQr({
     </>
   );
 }
+
