@@ -1,5 +1,14 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import { safeCell, type Settings, type Summary, workshopDays } from "./attendance";
+
+let _exceljsPromise: Promise<any> | null = null;
+async function getExcelJS() {
+  if (!_exceljsPromise) {
+    _exceljsPromise = import("exceljs");
+  }
+  const mod = await _exceljsPromise;
+  return (mod.default || mod);
+}
 
 export interface ParticipantRow {
   id: string;
@@ -65,6 +74,7 @@ export async function generate30DayWorkbook(
   settings: Settings,
   participants: ParticipantRow[],
 ): Promise<Uint8Array> {
+  const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = settings.name || "Event Management Portal";
   wb.created = new Date();
@@ -196,6 +206,7 @@ export async function generateDailyReportWorkbook(
     remarks?: string | null;
   }>,
 ): Promise<Uint8Array> {
+  const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = "Event Management Portal";
 
@@ -249,6 +260,7 @@ export async function generateIndividualReportWorkbook(
   participant: ParticipantRow,
   settings: Settings,
 ): Promise<Uint8Array> {
+  const ExcelJS = await getExcelJS();
   const wb = new ExcelJS.Workbook();
   wb.creator = "Event Management Portal";
 

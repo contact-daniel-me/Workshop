@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import QRCode from "qrcode";
 import {
@@ -63,14 +63,40 @@ import {
   IdCard,
   CalendarCheck,
 } from "lucide-react";
-import { RegisterParticipantDialog } from "@/components/admin/RegisterParticipantDialog";
-import { AdminQrScannerDialog } from "@/components/admin/AdminQrScannerDialog";
-import { AdminFaceRecognitionDialog } from "@/components/admin/AdminFaceRecognitionDialog";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { AdminAttendanceManagementTab } from "@/components/admin/AdminAttendanceManagementTab";
-import { ChangeParticipantPasswordDialog } from "@/components/admin/ChangeParticipantPasswordDialog";
-import { DeleteParticipantDialog } from "@/components/admin/DeleteParticipantDialog";
-import { AdminDigitalIdDialog } from "@/components/id-card/AdminDigitalIdDialog";
+
+// Code-split heavy admin action dialogs to shrink critical admin route bundle
+const RegisterParticipantDialog = lazy(() =>
+  import("@/components/admin/RegisterParticipantDialog").then((m) => ({
+    default: m.RegisterParticipantDialog,
+  }))
+);
+const AdminQrScannerDialog = lazy(() =>
+  import("@/components/admin/AdminQrScannerDialog").then((m) => ({
+    default: m.AdminQrScannerDialog,
+  }))
+);
+const AdminFaceRecognitionDialog = lazy(() =>
+  import("@/components/admin/AdminFaceRecognitionDialog").then((m) => ({
+    default: m.AdminFaceRecognitionDialog,
+  }))
+);
+const ChangeParticipantPasswordDialog = lazy(() =>
+  import("@/components/admin/ChangeParticipantPasswordDialog").then((m) => ({
+    default: m.ChangeParticipantPasswordDialog,
+  }))
+);
+const DeleteParticipantDialog = lazy(() =>
+  import("@/components/admin/DeleteParticipantDialog").then((m) => ({
+    default: m.DeleteParticipantDialog,
+  }))
+);
+const AdminDigitalIdDialog = lazy(() =>
+  import("@/components/id-card/AdminDigitalIdDialog").then((m) => ({
+    default: m.AdminDigitalIdDialog,
+  }))
+);
 import { PhotoCaptureInput } from "@/components/auth/PhotoCaptureInput";
 import { fileToBase64 } from "@/lib/image-validation";
 import { uploadRegistrationPhoto } from "@/lib/lookup.functions";
@@ -198,13 +224,21 @@ function AdminPage() {
     }
   }, [settings]);
 
-  // Load photos for participants
+  // Load photos for participants with path-signature memoization to prevent polling thrash
+  const photoPathsKey = useMemo(() => {
+    return (adminData?.profiles ?? [])
+      .map((p) => p.photo_path)
+      .filter(Boolean)
+      .sort()
+      .join(",");
+  }, [adminData?.profiles]);
+
   useEffect(() => {
-    if (adminData?.profiles) {
-      const paths = adminData.profiles.map((p) => p.photo_path).filter(Boolean);
+    if (photoPathsKey) {
+      const paths = photoPathsKey.split(",");
       void signedUrls("photos", paths).then(setPhotoUrls);
     }
-  }, [adminData?.profiles]);
+  }, [photoPathsKey]);
 
   // Handle QR code generation for visual display
   useEffect(() => {
@@ -2084,40 +2118,52 @@ function AdminPage() {
       )}
 
       {/* Change Participant Password Dialog */}
-      <ChangeParticipantPasswordDialog
-        open={!!passwordTargetUser}
-        onOpenChange={(open) => !open && setPasswordTargetUser(null)}
-        participant={passwordTargetUser}
-        onSuccess={() => {
-          void refetch();
-        }}
-      />
+      {passwordTargetUser && (
+        <Suspense fallback={null}>
+          <ChangeParticipantPasswordDialog
+            open={!!passwordTargetUser}
+            onOpenChange={(open) => !open && setPasswordTargetUser(null)}
+            participant={passwordTargetUser}
+            onSuccess={() => {
+              void refetch();
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Delete Participant Dialog */}
-      <DeleteParticipantDialog
-        open={!!deleteTargetUser}
-        onOpenChange={(open) => !open && setDeleteTargetUser(null)}
-        participant={deleteTargetUser}
-        onSuccess={() => {
-          if (selectedParticipant?.id === deleteTargetUser?.id) {
-            setSelectedParticipant(null);
-          }
-          void refetch();
-        }}
-      />
+      {deleteTargetUser && (
+        <Suspense fallback={null}>
+          <DeleteParticipantDialog
+            open={!!deleteTargetUser}
+            onOpenChange={(open) => !open && setDeleteTargetUser(null)}
+            participant={deleteTargetUser}
+            onSuccess={() => {
+              if (selectedParticipant?.id === deleteTargetUser?.id) {
+                setSelectedParticipant(null);
+              }
+              void refetch();
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Digital Participant ID Card Preview & Export Dialog */}
-      <AdminDigitalIdDialog
-        open={!!digitalIdTarget}
-        onOpenChange={(open) => !open && setDigitalIdTarget(null)}
-        participant={digitalIdTarget}
-        settings={settings}
-        photoUrl={
-          digitalIdTarget?.id
-            ? photoUrls[adminData?.profiles.find((x) => x.id === digitalIdTarget.id)?.photo_path ?? ""]
-            : undefined
-        }
-      />
+      {digitalIdTarget && (
+        <Suspense fallback={null}>
+          <AdminDigitalIdDialog
+            open={!!digitalIdTarget}
+            onOpenChange={(open) => !open && setDigitalIdTarget(null)}
+            participant={digitalIdTarget}
+            settings={settings}
+            photoUrl={
+              digitalIdTarget?.id
+                ? photoUrls[adminData?.profiles.find((x) => x.id === digitalIdTarget.id)?.photo_path ?? ""]
+                : undefined
+            }
+          />
+        </Suspense>
+      )}
 
       {/* Admin Participant Photo Upload Dialog */}
       <Dialog open={adminPhotoModalOpen} onOpenChange={setAdminPhotoModalOpen}>
@@ -2248,31 +2294,43 @@ function AdminPage() {
       </Dialog>
 
       {/* Register New Participant Dialog */}
-      <RegisterParticipantDialog
-        open={registerDialogOpen}
-        onOpenChange={setRegisterDialogOpen}
-        onSuccess={() => {
-          refetch();
-        }}
-        canApprove={me?.isStaff ?? false}
-      />
+      {registerDialogOpen && (
+        <Suspense fallback={null}>
+          <RegisterParticipantDialog
+            open={registerDialogOpen}
+            onOpenChange={setRegisterDialogOpen}
+            onSuccess={() => {
+              refetch();
+            }}
+            canApprove={me?.isStaff ?? false}
+          />
+        </Suspense>
+      )}
 
       {/* Live QR Attendance Scanner Popup Dialog (Direct camera scanning only) */}
-      <AdminQrScannerDialog
-        open={qrScannerDialogOpen}
-        onOpenChange={setQrScannerDialogOpen}
-        onAttendanceConfirmed={() => void refetch()}
-        workshopName={settings?.name}
-      />
+      {qrScannerDialogOpen && (
+        <Suspense fallback={null}>
+          <AdminQrScannerDialog
+            open={qrScannerDialogOpen}
+            onOpenChange={setQrScannerDialogOpen}
+            onAttendanceConfirmed={() => void refetch()}
+            workshopName={settings?.name}
+          />
+        </Suspense>
+      )}
 
       {/* Live Face Recognition Verification Popup Dialog (Direct face camera only) */}
-      <AdminFaceRecognitionDialog
-        open={faceRecognitionDialogOpen}
-        onOpenChange={setFaceRecognitionDialogOpen}
-        onAttendanceConfirmed={() => void refetch()}
-        workshopName={settings?.name}
-        approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
-      />
+      {faceRecognitionDialogOpen && (
+        <Suspense fallback={null}>
+          <AdminFaceRecognitionDialog
+            open={faceRecognitionDialogOpen}
+            onOpenChange={setFaceRecognitionDialogOpen}
+            onAttendanceConfirmed={() => void refetch()}
+            workshopName={settings?.name}
+            approvedParticipants={adminData?.profiles?.filter((p) => p.verification_status === "verified")}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

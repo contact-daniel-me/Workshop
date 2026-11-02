@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMe, useSettings, useMyAttendance, signedUrls } from "@/lib/use-me";
 import { todayLocal, workshopDays, addDays } from "@/lib/attendance";
@@ -11,7 +11,13 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ClickableAvatar } from "@/components/ui/profile-photo-lightbox";
-import { DigitalParticipantIdCard } from "@/components/id-card/DigitalParticipantIdCard";
+
+// Lazy-load Digital Participant ID card to optimize critical page bundle
+const DigitalParticipantIdCard = lazy(() =>
+  import("@/components/id-card/DigitalParticipantIdCard").then((m) => ({
+    default: m.DigitalParticipantIdCard,
+  }))
+);
 import {
   CalendarDays,
   QrCode,
@@ -350,10 +356,12 @@ function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent className="pt-4">
-                <DigitalParticipantIdCard
-                  data={digitalIdData}
-                  stats={digitalIdStats}
-                />
+                <Suspense fallback={<div className="h-64 rounded-2xl bg-muted/20 animate-pulse flex items-center justify-center text-xs text-muted-foreground">Loading ID Card…</div>}>
+                  <DigitalParticipantIdCard
+                    data={digitalIdData}
+                    stats={digitalIdStats}
+                  />
+                </Suspense>
               </CardContent>
             </Card>
           )}
@@ -452,10 +460,12 @@ function DashboardPage() {
 
           {digitalIdData && (
             <div className="pt-2">
-              <DigitalParticipantIdCard
-                data={digitalIdData}
-                stats={digitalIdStats}
-              />
+              <Suspense fallback={<div className="h-64 rounded-2xl bg-muted/20 animate-pulse flex items-center justify-center text-xs text-muted-foreground">Loading ID Card…</div>}>
+                <DigitalParticipantIdCard
+                  data={digitalIdData}
+                  stats={digitalIdStats}
+                />
+              </Suspense>
             </div>
           )}
         </DialogContent>

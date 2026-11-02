@@ -46,6 +46,85 @@ interface Props {
   isStaff?: boolean;
 }
 
+function QrCountdownBadge({
+  expiresAt,
+  onExpire,
+}: {
+  expiresAt?: string | null;
+  onExpire: () => void;
+}) {
+  const [timeLeft, setTimeLeft] = useState(() => {
+    if (!expiresAt) return 0;
+    return Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+  });
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        onExpire();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [expiresAt, onExpire]);
+
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+  const formatted = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+
+  return (
+    <div className="pt-2">
+      <div className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-muted-foreground bg-card border px-3 py-1 rounded-full shadow-xs">
+        <Clock className="h-3.5 w-3.5 text-primary" />
+        <span>Valid for: </span>
+        <span className={timeLeft < 120 ? "text-destructive font-bold" : "text-foreground font-bold"}>
+          {formatted}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function UnlockCountdownText({
+  targetIso,
+  onUnlock,
+}: {
+  targetIso: string | null;
+  onUnlock: () => void;
+}) {
+  const [timeLeft, setTimeLeft] = useState(() => {
+    if (!targetIso) return 0;
+    return Math.max(0, Math.floor((new Date(targetIso).getTime() - Date.now()) / 1000));
+  });
+
+  useEffect(() => {
+    if (!targetIso) return;
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((new Date(targetIso).getTime() - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        onUnlock();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [targetIso, onUnlock]);
+
+  const hours = Math.floor(timeLeft / 3600);
+  const minutes = Math.floor((timeLeft % 3600) / 60);
+
+  return (
+    <div className="text-[11px] text-muted-foreground font-mono bg-card px-3 py-1 rounded-full border">
+      Next QR unlocks in {hours}h {minutes}m
+    </div>
+  );
+}
+
 export function ParticipantAttendanceQrCard({
   participantId,
   fullName = "Participant",
@@ -69,12 +148,10 @@ export function ParticipantAttendanceQrCard({
   const [loading, setLoading] = useState(false);
   const [qrData, setQrData] = useState<ParticipantQrResponse | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [timeLeftSec, setTimeLeftSec] = useState<number>(0);
   const [copiedCode, setCopiedCode] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isApproved = verificationStatus === "verified";
-  const timerRef = useRef<number | null>(null);
 
   // Fetch or retrieve participant's daily QR code
   const fetchDailyQr = useCallback(
@@ -102,13 +179,6 @@ export function ParticipantAttendanceQrCard({
             });
             setQrDataUrl(url);
 
-            if (res.expiresAt) {
-              const diff = Math.max(
-                0,
-                Math.floor((new Date(res.expiresAt).getTime() - Date.now()) / 1000)
-              );
-              setTimeLeftSec(diff);
-            }
             if (isRefresh) {
               toast.success("Attendance QR refreshed!");
             }
@@ -136,74 +206,17 @@ export function ParticipantAttendanceQrCard({
     void fetchDailyQr();
   }, [fetchDailyQr]);
 
-  // Expiration countdown timer
-  useEffect(() => {
-    if (timerRef.current) window.clearInterval(timerRef.current);
-
-    if (timeLeftSec > 0) {
-      timerRef.current = window.setInterval(() => {
-        setTimeLeftSec((prev) => {
-          if (prev <= 1) {
-            if (timerRef.current) window.clearInterval(timerRef.current);
-            void fetchDailyQr(true); // Auto-refresh when expired
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-
-    return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
-    };
-  }, [timeLeftSec, fetchDailyQr]);
-
   const isAlreadyPresent =
     todayRecord?.status === "present" || qrData?.code === "ALREADY_PRESENT" || qrData?.alreadyMarked;
   const isLockedUntilNoon = qrData?.code === "LOCKED_UNTIL_SESSION_TIME";
 
-  // Session unlock countdown timer (to 12:00 AM Midnight IST)
-  const [unlockTimeLeftSec, setUnlockTimeLeftSec] = useState<number>(0);
-
-  useEffect(() => {
-    const targetIso =
-      qrData?.unlocksAt ||
-      (isAlreadyPresent
-        ? getNextSessionUnlockTime(todayDate, true)
-        : isLockedUntilNoon
-        ? getNextSessionUnlockTime(todayDate, false)
-        : null);
-
-    if (!targetIso) {
-      setUnlockTimeLeftSec(0);
-      return;
-    }
-
-    const calcDiff = () => {
-      const diffMs = new Date(targetIso).getTime() - Date.now();
-      return Math.max(0, Math.floor(diffMs / 1000));
-    };
-
-    setUnlockTimeLeftSec(calcDiff());
-
-    const interval = window.setInterval(() => {
-      const remaining = calcDiff();
-      setUnlockTimeLeftSec(remaining);
-      if (remaining <= 0) {
-        window.clearInterval(interval);
-        void fetchDailyQr(true);
-      }
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [qrData?.unlocksAt, isLockedUntilNoon, isAlreadyPresent, todayDate, fetchDailyQr]);
-
-  const unlockHours = Math.floor(unlockTimeLeftSec / 3600);
-  const unlockMinutes = Math.floor((unlockTimeLeftSec % 3600) / 60);
-
-  const minutes = Math.floor(timeLeftSec / 60);
-  const seconds = timeLeftSec % 60;
-  const formattedTimeLeft = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  const unlockTargetIso =
+    qrData?.unlocksAt ||
+    (isAlreadyPresent
+      ? getNextSessionUnlockTime(todayDate, true)
+      : isLockedUntilNoon
+      ? getNextSessionUnlockTime(todayDate, false)
+      : null);
 
   const handleCopyCode = (code: string) => {
     void navigator.clipboard.writeText(code);
@@ -437,9 +450,10 @@ export function ParticipantAttendanceQrCard({
                     </p>
                   </div>
                   {!isLastWorkshopDay && (
-                    <div className="text-[11px] text-muted-foreground font-mono bg-card px-3 py-1 rounded-full border">
-                      Next QR unlocks in {unlockHours}h {unlockMinutes}m
-                    </div>
+                    <UnlockCountdownText
+                      targetIso={unlockTargetIso}
+                      onUnlock={() => void fetchDailyQr(true)}
+                    />
                   )}
                 </div>
               ) : isLockedUntilNoon ? (
@@ -498,16 +512,11 @@ export function ParticipantAttendanceQrCard({
                     </div>
                   </div>
 
-                  {/* Countdown Timer */}
-                  <div className="pt-2">
-                    <div className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold text-muted-foreground bg-card border px-3 py-1 rounded-full shadow-xs">
-                      <Clock className="h-3.5 w-3.5 text-primary" />
-                      <span>Valid for: </span>
-                      <span className={timeLeftSec < 120 ? "text-destructive font-bold" : "text-foreground font-bold"}>
-                        {formattedTimeLeft}
-                      </span>
-                    </div>
-                  </div>
+                  {/* Countdown Timer (Isolated to avoid re-rendering entire card every second) */}
+                  <QrCountdownBadge
+                    expiresAt={qrData?.expiresAt}
+                    onExpire={() => void fetchDailyQr(true)}
+                  />
 
                   {/* Six-character verification code & Refresh action */}
                   <div className="flex items-center justify-between w-full pt-1 px-1 text-xs">

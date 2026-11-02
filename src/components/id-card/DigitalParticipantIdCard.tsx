@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import QRCode from "qrcode";
-import { toPng } from "html-to-image";
 import { toast } from "sonner";
 import { getParticipantDailyQr, type ParticipantQrResponse } from "@/lib/attendance-qr.server";
 import { getNextSessionUnlockTime, todayLocal } from "@/lib/attendance";
@@ -171,6 +170,7 @@ export function DigitalParticipantIdCard({
     setDownloading(true);
 
     try {
+      const { toPng } = await import("html-to-image");
       // Create high-res PNG at 2.5x retina ratio
       const dataUrl = await toPng(target, {
         cacheBust: true,

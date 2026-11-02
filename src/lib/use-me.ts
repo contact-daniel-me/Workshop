@@ -6,6 +6,8 @@ import type { ParticipantRow } from "./excel";
 export function useMe() {
   return useQuery({
     queryKey: ["me"],
+    staleTime: 60_000, // 1 minute fresh
+    gcTime: 5 * 60_000,
     queryFn: async () => {
       const { data: u } = await supabase.auth.getUser();
       if (!u.user) return null;
@@ -38,6 +40,8 @@ export const DEFAULT_WORKSHOP_SETTINGS: Settings & { id: number } = {
 export function useSettings() {
   return useQuery({
     queryKey: ["settings"],
+    staleTime: 5 * 60_000, // 5 minutes cache
+    gcTime: 30 * 60_000,
     queryFn: async () => {
       const { data, error } = await supabase.from("workshop_settings").select("*").maybeSingle();
       if (error || !data) {
@@ -56,11 +60,13 @@ export function useMyAttendance() {
   return useQuery({
     queryKey: ["my_attendance", me?.user?.id],
     enabled: !!me?.user?.id && !!settings,
+    staleTime: 30_000, // 30 seconds fresh
+    gcTime: 5 * 60_000,
     queryFn: async () => {
       if (!me?.user?.id || !settings) return null;
       const { data, error } = await supabase
         .from("attendance")
-        .select("*")
+        .select("id, user_id, day_date, status, method, checked_in_at, remarks, morning_status, afternoon_status")
         .eq("user_id", me.user.id)
         .order("day_date", { ascending: false });
 
@@ -82,17 +88,34 @@ export function useAdminData() {
   return useQuery({
     queryKey: ["admin_data"],
     enabled: !!me?.isStaff && !!settings,
-    refetchInterval: 15_000,
+    staleTime: 30_000, // 30 seconds buffer
+    gcTime: 5 * 60_000,
+    refetchInterval: 30_000, // Poll every 30s instead of 15s to reduce load
     queryFn: async () => {
       if (!settings) return null;
       const today = todayLocal();
 
       const [profilesRes, attendanceRes, qrRes, rolesRes, auditRes] = await Promise.all([
-        supabase.from("profiles").select("*").order("participant_code", { ascending: true }),
-        supabase.from("attendance").select("*"),
-        supabase.from("qr_sessions").select("*").eq("day_date", today).order("created_at", { ascending: false }),
-        supabase.from("user_roles").select("*"),
-        supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(60),
+        supabase
+          .from("profiles")
+          .select("id, participant_code, full_name, phone, email, photo_path, verification_status, created_at")
+          .order("participant_code", { ascending: true }),
+        supabase
+          .from("attendance")
+          .select("id, user_id, day_date, status, method, checked_in_at, remarks, morning_status, afternoon_status"),
+        supabase
+          .from("qr_sessions")
+          .select("id, day_date, token, short_code, expires_at, revoked, created_at, participant_id")
+          .eq("day_date", today)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("user_roles")
+          .select("user_id, role"),
+        supabase
+          .from("audit_logs")
+          .select("id, actor_id, action, target_user, details, created_at")
+          .order("created_at", { ascending: false })
+          .limit(30),
       ]);
 
       if (profilesRes.error) throw profilesRes.error;
@@ -165,11 +188,41 @@ export function useAdminData() {
   });
 }
 
+// In-memory cache for signed URLs to eliminate duplicate network requests (valid for 50 mins)
+const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
 export async function signedUrls(bucket: "photos" | "selfies", paths: (string | null | undefined)[]) {
   const list = paths.filter((p): p is string => !!p);
   if (!list.length) return {} as Record<string, string>;
-  const { data } = await supabase.storage.from(bucket).createSignedUrls(list, 3600);
+
+  const now = Date.now();
   const out: Record<string, string> = {};
-  data?.forEach((d) => d.path && d.signedUrl && (out[d.path] = d.signedUrl));
+  const pathsToFetch: string[] = [];
+
+  list.forEach((path) => {
+    const cacheKey = `${bucket}:${path}`;
+    const cached = signedUrlCache.get(cacheKey);
+    if (cached && cached.expiresAt > now + 60_000) {
+      out[path] = cached.url;
+    } else {
+      pathsToFetch.push(path);
+    }
+  });
+
+  if (!pathsToFetch.length) {
+    return out;
+  }
+
+  const { data } = await supabase.storage.from(bucket).createSignedUrls(pathsToFetch, 3600);
+  data?.forEach((d) => {
+    if (d.path && d.signedUrl) {
+      out[d.path] = d.signedUrl;
+      signedUrlCache.set(`${bucket}:${d.path}`, {
+        url: d.signedUrl,
+        expiresAt: now + 50 * 60 * 1000,
+      });
+    }
+  });
+
   return out;
 }
