@@ -63,6 +63,7 @@ import {
   IdCard,
   CalendarCheck,
   FileDown,
+  Fingerprint,
 } from "lucide-react";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { AdminAttendanceManagementTab } from "@/components/admin/AdminAttendanceManagementTab";
@@ -694,6 +695,18 @@ function AdminPage() {
           >
             <ScanFace className="h-4 w-4 shrink-0" />
             <span>Face Recognition</span>
+          </Button>
+
+          <Button
+            size="sm"
+            asChild
+            variant="outline"
+            className="gap-2 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-semibold text-xs sm:text-sm shadow-xs cursor-pointer"
+          >
+            <Link to="/biometric-lab">
+              <Fingerprint className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>Fingerprint Lab</span>
+            </Link>
           </Button>
 
           <Button
