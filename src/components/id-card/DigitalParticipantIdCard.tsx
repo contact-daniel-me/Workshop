@@ -222,44 +222,46 @@ export function DigitalParticipantIdCard({
   };
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-4 sm:space-y-5 ${className}`}>
       {/* Control Bar: Mode Switcher & Actions */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 bg-muted/40 rounded-2xl border">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 p-2 bg-muted/40 rounded-2xl border">
         {/* View Mode Toggle */}
-        <div className="grid grid-cols-2 p-1 bg-muted rounded-xl border gap-1 w-full sm:w-auto">
+        <div className="inline-flex items-center p-1 bg-muted rounded-xl border gap-1 shrink-0">
           <Button
             size="sm"
             variant={viewMode === "card" ? "default" : "ghost"}
             onClick={() => setViewMode("card")}
-            className={`gap-1.5 text-xs font-bold rounded-lg transition-all ${
-              viewMode === "card" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+            className={`gap-1.5 text-xs font-bold rounded-lg transition-all shrink-0 cursor-pointer ${
+              viewMode === "card" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <IdCard className="h-4 w-4" /> Digital Card View
+            <IdCard className="h-4 w-4 shrink-0" />
+            <span>Digital Card</span>
           </Button>
           <Button
             size="sm"
             variant={viewMode === "dossier" ? "default" : "ghost"}
             onClick={() => setViewMode("dossier")}
-            className={`gap-1.5 text-xs font-bold rounded-lg transition-all ${
-              viewMode === "dossier" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+            className={`gap-1.5 text-xs font-bold rounded-lg transition-all shrink-0 cursor-pointer ${
+              viewMode === "dossier" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <FileText className="h-4 w-4" /> Detailed Profile View
+            <FileText className="h-4 w-4 shrink-0" />
+            <span>Profile Details</span>
           </Button>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2">
           {viewMode === "card" && (
             <Button
               size="sm"
               variant="outline"
               onClick={() => setIsFlipped((prev) => !prev)}
-              className="gap-1.5 text-xs font-bold flex-1 sm:flex-initial"
+              className="gap-1.5 text-xs font-bold shrink-0 cursor-pointer"
             >
-              <RotateCw className="h-3.5 w-3.5 text-primary" />
-              {isFlipped ? "Show Front" : "Show Back (QR & Stats)"}
+              <RotateCw className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span>{isFlipped ? "Show Front" : "Show Back"}</span>
             </Button>
           )}
 
@@ -268,20 +270,20 @@ export function DigitalParticipantIdCard({
             variant="outline"
             onClick={handleDownload}
             disabled={downloading}
-            className="gap-1.5 text-xs font-bold flex-1 sm:flex-initial"
+            className="gap-1.5 text-xs font-bold shrink-0 cursor-pointer"
           >
-            <Download className={`h-3.5 w-3.5 text-emerald-600 ${downloading ? "animate-bounce" : ""}`} />
-            {downloading ? "Rendering…" : "Download PNG"}
+            <Download className={`h-3.5 w-3.5 text-emerald-600 shrink-0 ${downloading ? "animate-bounce" : ""}`} />
+            <span>{downloading ? "Rendering…" : "Download PNG"}</span>
           </Button>
 
           <Button
             size="sm"
             variant="ghost"
             onClick={handleShare}
-            className="gap-1.5 text-xs font-semibold px-2.5 sm:px-3"
+            className="gap-1.5 text-xs font-semibold px-2.5 sm:px-3 shrink-0 cursor-pointer"
             title="Share Participant ID"
           >
-            <Share2 className="h-3.5 w-3.5" />
+            <Share2 className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">Share</span>
           </Button>
         </div>
@@ -289,7 +291,7 @@ export function DigitalParticipantIdCard({
 
       {/* VIEW MODE 1: DIGITAL CARD VIEW (3D FLIP) */}
       {viewMode === "card" && (
-        <div className="flex flex-col items-center justify-center py-4">
+        <div className="flex flex-col items-center justify-center py-2 sm:py-3">
           {/* Card Container with smooth 3D Perspective */}
           <div className="w-full max-w-[340px] sm:max-w-[360px] min-h-[520px] sm:min-h-[540px] [perspective:1200px]">
             <div

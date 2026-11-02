@@ -41,7 +41,7 @@ export function ParticipantIdCardFront({ data, onFlip, showFlipPrompt = true }: 
   const isRejected = data.verificationStatus === "rejected";
 
   return (
-    <div className="relative w-full max-w-[340px] sm:max-w-[360px] min-h-[520px] sm:min-h-[540px] rounded-2xl bg-white text-[#263445] border border-[#E2E8F0] shadow-xl p-7 flex flex-col justify-between overflow-hidden select-none font-sans">
+    <div className="relative w-full max-w-[340px] sm:max-w-[360px] min-h-[520px] sm:min-h-[540px] rounded-2xl bg-white text-[#263445] border border-[#E2E8F0] shadow-xl p-5 sm:p-6 flex flex-col justify-between overflow-hidden select-none font-sans">
       {/* Top Header: Clean Credential Title & Issue Date */}
       <div className="flex items-center justify-between border-b border-[#F4F6F8] pb-3 text-[10px] tracking-[0.18em] uppercase font-semibold text-[#64748B]">
         <span>Identity Credential</span>

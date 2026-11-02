@@ -50,7 +50,7 @@ export function ParticipantIdCardBack({
   const isNoSession = qrStatus === "NO_SESSION_SCHEDULED";
 
   return (
-    <div className="relative w-full max-w-[340px] sm:max-w-[360px] min-h-[520px] sm:min-h-[540px] rounded-2xl bg-white text-[#263445] border border-[#E2E8F0] shadow-xl p-7 flex flex-col justify-between overflow-hidden select-none font-sans">
+    <div className="relative w-full max-w-[340px] sm:max-w-[360px] min-h-[520px] sm:min-h-[540px] rounded-2xl bg-white text-[#263445] border border-[#E2E8F0] shadow-xl p-5 sm:p-6 flex flex-col justify-between overflow-hidden select-none font-sans">
       {/* Top Header: Participant ID & Scanning Instruction */}
       <div className="text-center space-y-1 border-b border-[#F4F6F8] pb-3">
         <p className="font-mono text-xs font-semibold text-[#172B45] tracking-wider">
