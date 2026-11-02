@@ -58,7 +58,8 @@ export function DigitalParticipantIdCard({
   const [qrTimeLeftSec, setQrTimeLeftSec] = useState<number>(0);
   const [unlockTimeLeftSec, setUnlockTimeLeftSec] = useState<number>(0);
 
-  const cardRef = useRef<HTMLDivElement | null>(null);
+  const frontRef = useRef<HTMLDivElement | null>(null);
+  const backRef = useRef<HTMLDivElement | null>(null);
   const qrTimerRef = useRef<number | null>(null);
 
   // Fetch or retrieve dynamic QR code
@@ -164,12 +165,13 @@ export function DigitalParticipantIdCard({
 
   // Download ID card as high-res PNG
   const handleDownload = async () => {
-    if (!cardRef.current) return;
+    const target = isFlipped ? backRef.current : frontRef.current;
+    if (!target) return;
     setDownloading(true);
 
     try {
       // Create high-res PNG at 2.5x retina ratio
-      const dataUrl = await toPng(cardRef.current, {
+      const dataUrl = await toPng(target, {
         cacheBust: true,
         pixelRatio: 2.5,
         quality: 0.95,
@@ -187,6 +189,15 @@ export function DigitalParticipantIdCard({
     } finally {
       setDownloading(false);
     }
+  };
+
+  // Safe card click handler: only flips if clicking the card body, not buttons
+  const handleCardClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("button") || target.closest("a") || target.closest("[role='button']")) {
+      return;
+    }
+    setIsFlipped((prev) => !prev);
   };
 
   // Share digital ID
@@ -279,19 +290,25 @@ export function DigitalParticipantIdCard({
       {viewMode === "card" && (
         <div className="flex flex-col items-center justify-center py-4">
           {/* Card Container with smooth 3D Perspective */}
-          <div className="[perspective:1200px] w-full max-w-[340px] sm:max-w-[360px]">
+          <div className="w-full max-w-[340px] sm:max-w-[360px] min-h-[520px] sm:min-h-[540px] [perspective:1200px]">
             <div
-              ref={cardRef}
-              onClick={() => setIsFlipped((prev) => !prev)}
-              className="w-full transition-transform duration-700 [transform-style:preserve-3d] cursor-pointer"
+              className="relative w-full h-full min-h-[520px] sm:min-h-[540px] transition-transform duration-700 [transform-style:preserve-3d] cursor-pointer"
               style={{
                 transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
               }}
+              onClick={handleCardClick}
             >
               {/* Card Front Face */}
               <div
-                className="w-full [backface-visibility:hidden]"
-                style={{ display: isFlipped ? "none" : "block" }}
+                ref={frontRef}
+                className={`w-full h-full [backface-visibility:hidden] ${
+                  isFlipped ? "pointer-events-none" : "pointer-events-auto"
+                }`}
+                style={{
+                  transform: "rotateY(0deg)",
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                }}
               >
                 <ParticipantIdCardFront
                   data={data}
@@ -302,8 +319,15 @@ export function DigitalParticipantIdCard({
 
               {/* Card Back Face */}
               <div
-                className="w-full [backface-visibility:hidden]"
-                style={{ display: isFlipped ? "block" : "none" }}
+                ref={backRef}
+                className={`absolute inset-0 w-full h-full [backface-visibility:hidden] ${
+                  isFlipped ? "pointer-events-auto" : "pointer-events-none"
+                }`}
+                style={{
+                  transform: "rotateY(180deg)",
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                }}
               >
                 <ParticipantIdCardBack
                   data={data}
@@ -321,11 +345,37 @@ export function DigitalParticipantIdCard({
             </div>
           </div>
 
-          {/* Interactive Flip Hint */}
-          <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1.5">
-            <RotateCw className="h-3.5 w-3.5 text-primary" />
-            <span>Click the card or use the toggle above to flip between Front and Back.</span>
-          </p>
+          {/* Interactive Flip Hint & Direct Segment Toggle */}
+          <div className="flex flex-col items-center gap-2 mt-4">
+            <div className="inline-flex items-center p-1 bg-muted/80 rounded-xl border gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant={!isFlipped ? "default" : "ghost"}
+                onClick={() => setIsFlipped(false)}
+                className={`gap-1.5 text-xs font-semibold rounded-lg h-8 px-3 transition-all ${
+                  !isFlipped ? "bg-primary text-primary-foreground shadow-xs font-bold" : "text-muted-foreground"
+                }`}
+              >
+                <User className="h-3.5 w-3.5" /> Front Face
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={isFlipped ? "default" : "ghost"}
+                onClick={() => setIsFlipped(true)}
+                className={`gap-1.5 text-xs font-semibold rounded-lg h-8 px-3 transition-all ${
+                  isFlipped ? "bg-primary text-primary-foreground shadow-xs font-bold" : "text-muted-foreground"
+                }`}
+              >
+                <QrCode className="h-3.5 w-3.5" /> Back Face (QR Code)
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <RotateCw className="h-3.5 w-3.5 text-primary" />
+              <span>Click the card or use the toggle above to flip between Front and Back.</span>
+            </p>
+          </div>
         </div>
       )}
 

@@ -579,3 +579,4 @@ export function AdminFaceRecognitionDialog({
     </Dialog>
   );
 }
+

@@ -119,8 +119,11 @@ export function ParticipantIdCardBack({
               {onRefreshQr && (
                 <button
                   type="button"
-                  onClick={onRefreshQr}
-                  className="text-xs text-[#172B45] font-semibold hover:underline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRefreshQr();
+                  }}
+                  className="text-xs text-[#172B45] font-semibold hover:underline cursor-pointer"
                 >
                   Generate QR
                 </button>
@@ -179,7 +182,10 @@ export function ParticipantIdCardBack({
         {onFlip && (
           <button
             type="button"
-            onClick={onFlip}
+            onClick={(e) => {
+              e.stopPropagation();
+              onFlip();
+            }}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#172B45] hover:text-[#00A878] transition-colors cursor-pointer"
           >
             <span>Show Front</span>

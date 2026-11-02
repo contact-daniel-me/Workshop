@@ -129,7 +129,10 @@ export function ParticipantIdCardFront({ data, onFlip, showFlipPrompt = true }: 
         {showFlipPrompt && onFlip && (
           <button
             type="button"
-            onClick={onFlip}
+            onClick={(e) => {
+              e.stopPropagation();
+              onFlip();
+            }}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#172B45] hover:text-[#00A878] transition-colors cursor-pointer"
           >
             <span>Scan QR</span>
