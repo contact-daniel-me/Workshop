@@ -101,7 +101,7 @@ export function RegisterParticipantDialog({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isGeneratedPassword, setIsGeneratedPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState<"verified" | "pending">("verified");
+  const verificationStatus = "verified";
   const [remarks, setRemarks] = useState("");
 
   // Photo state
@@ -136,7 +136,6 @@ export function RegisterParticipantDialog({
     setConfirmPassword("");
     setIsGeneratedPassword(false);
     setShowPassword(false);
-    setVerificationStatus(canApprove ? "verified" : "pending");
     setRemarks("");
     setPhotoFile(null);
     setPhotoPreview(null);
@@ -482,43 +481,15 @@ export function RegisterParticipantDialog({
                 {errors.photo && <p className="text-[11px] text-destructive">{errors.photo}</p>}
               </div>
 
-              {/* Registration Status & Remarks */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Initial Status</Label>
-                  <Select
-                    value={verificationStatus}
-                    onValueChange={(val: "verified" | "pending") => setVerificationStatus(val)}
-                  >
-                    <SelectTrigger className="text-xs font-medium">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="verified">
-                        <span className="flex items-center gap-1.5 text-emerald-700">
-                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                          Approved (Verified)
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="pending">
-                        <span className="flex items-center gap-1.5 text-amber-700">
-                          <Clock className="h-3.5 w-3.5 text-amber-600" />
-                          Pending Review
-                        </span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Administrative Remarks (Optional)</Label>
-                  <Input
-                    placeholder="e.g. Registered in-person at desk"
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    className="text-xs"
-                  />
-                </div>
+              {/* Administrative Remarks */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Administrative Remarks (Optional)</Label>
+                <Input
+                  placeholder="e.g. Registered in-person at desk"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  className="text-xs"
+                />
               </div>
 
               <DialogFooter className="pt-2">
@@ -579,14 +550,8 @@ export function RegisterParticipantDialog({
                     <h3 className="font-bold text-base text-foreground truncate">
                       {createdParticipant.fullName}
                     </h3>
-                    <Badge
-                      className={
-                        createdParticipant.verificationStatus === "verified"
-                          ? "bg-emerald-600 text-white text-[10px]"
-                          : "bg-amber-600 text-white text-[10px]"
-                      }
-                    >
-                      {createdParticipant.verificationStatus === "verified" ? "APPROVED" : "PENDING"}
+                    <Badge className="bg-emerald-600 text-white text-[10px]">
+                      APPROVED
                     </Badge>
                   </div>
                   <p className="font-mono text-xs font-semibold text-primary mt-0.5">

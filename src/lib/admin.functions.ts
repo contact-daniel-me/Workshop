@@ -271,7 +271,7 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
       phone: string;
       email: string;
       password: string;
-      verificationStatus: "verified" | "pending";
+      verificationStatus?: "verified" | "pending";
       photoBase64: string;
       remarks?: string;
     }) => {
@@ -280,7 +280,8 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
       const phone = normalizePhone(rawPhone);
       const email = String(input.email ?? "").trim().toLowerCase();
       const password = String(input.password ?? "").trim();
-      const verificationStatus = input.verificationStatus === "verified" ? "verified" : "pending";
+      // Participants registered by an administrator are auto-approved immediately
+      const verificationStatus: "verified" = "verified";
       const photoBase64 = String(input.photoBase64 ?? "").trim();
       const remarks = input.remarks ? String(input.remarks).trim().slice(0, 500) : "";
 
