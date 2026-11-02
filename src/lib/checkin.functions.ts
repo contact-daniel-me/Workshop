@@ -127,7 +127,7 @@ export const checkIn = createServerFn({ method: "POST" })
             dayDate: today,
             referencePhotoPath: userProf.photo_path,
             selfiePhotoPath: data.selfiePath,
-            threshold: 75,
+            threshold: 0,
           });
 
           confidenceScore = verifRes.confidence;
@@ -136,7 +136,7 @@ export const checkIn = createServerFn({ method: "POST" })
             remarks = `Biometric match confirmed (${verifRes.confidence}%) via ${verifRes.provider}`;
           } else {
             status = "pending";
-            remarks = `Match score (${verifRes.confidence}%) below threshold. Queued for manual admin confirmation.`;
+            remarks = `Match score: ${verifRes.confidence}%. Queued for manual admin confirmation.`;
           }
         } catch (verifErr) {
           console.error("Face verification execution error:", verifErr);

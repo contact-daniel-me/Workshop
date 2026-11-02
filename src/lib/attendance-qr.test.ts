@@ -266,7 +266,7 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
     dayDate,
     qrResult,
     faceConfidence,
-    threshold = 75,
+    threshold = 0,
     existingRecord,
     closeCandidateDiff,
   }: {
@@ -297,9 +297,9 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
       });
     }
 
-    // Evaluate Face
+    // Evaluate Face (Zero-threshold accepts any established positive identity match: confidence >= threshold && confidence > 0)
     const faceAttempted = typeof faceConfidence === "number";
-    const faceSuccess = faceAttempted && faceConfidence >= threshold;
+    const faceSuccess = faceAttempted && faceConfidence >= threshold && faceConfidence > 0;
     const isUncertain = faceAttempted && faceSuccess && typeof closeCandidateDiff === "number" && closeCandidateDiff < 5;
 
     if (faceAttempted) {
@@ -395,7 +395,6 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
       userId: "u-2",
       dayDate: "2026-10-30",
       faceConfidence: 88,
-      threshold: 75,
     });
 
     expect(res.status).toBe("present");
@@ -404,28 +403,30 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
     expect(res.resultCode).toBe("VERIFIED_PRESENT");
   });
 
-  it("marks attendance when QR fails but Face verification succeeds", () => {
+  it("marks attendance when QR fails but Face verification succeeds under 0% threshold", () => {
     const res = processVerification({
       userId: "u-3",
       dayDate: "2026-10-30",
       qrResult: { valid: false }, // QR expired or unreadable
-      faceConfidence: 91,
+      faceConfidence: 42, // previously rejected under 75% threshold, now accepted under 0%
     });
 
     expect(res.status).toBe("present");
     expect(res.attendanceRecord?.method).toBe("qr_selfie");
+    expect(res.resultCode).toBe("VERIFIED_PRESENT");
   });
 
-  it("marks attendance when Face verification fails but QR succeeds", () => {
+  it("marks attendance when Face verification has low confidence but establishes identity (zero threshold)", () => {
     const res = processVerification({
       userId: "u-4",
       dayDate: "2026-10-30",
-      faceConfidence: 54, // low lighting / below 75%
-      qrResult: { valid: true },
+      faceConfidence: 35, // low lighting / low confidence, accepted without 75% restriction
+      qrResult: { valid: false },
     });
 
     expect(res.status).toBe("present");
-    expect(res.attendanceRecord?.method).toBe("qr");
+    expect(res.attendanceRecord?.method).toBe("qr_selfie");
+    expect(res.resultCode).toBe("VERIFIED_PRESENT");
   });
 
   it("enforces atomic duplicate prevention: keeps exactly ONE attendance record when both methods succeed", () => {
@@ -454,17 +455,17 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
     expect(secondRun.resultCode).toBe("ALREADY_MARKED");
   });
 
-  it("does not mark attendance when both methods fail", () => {
+  it("does not mark attendance when identity cannot be established (0% confidence or no face detected)", () => {
     const res = processVerification({
       userId: "u-6",
       dayDate: "2026-10-30",
       qrResult: { valid: false },
-      faceConfidence: 45,
-      threshold: 75,
+      faceConfidence: 0, // unestablished identity / no face in frame
     });
 
     expect(res.status).toBe("not_marked");
     expect(res.attendanceRecord).toBeNull();
+    expect(res.resultCode).toBe("FACE_NOT_RECOGNIZED");
   });
 
   it("routes uncertain matches with close competitor scores to manual review", () => {
@@ -472,7 +473,6 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
       userId: "u-7",
       dayDate: "2026-10-30",
       faceConfidence: 86,
-      threshold: 75,
       closeCandidateDiff: 2, // candidate 2 is 84%, diff < 5%
     });
 

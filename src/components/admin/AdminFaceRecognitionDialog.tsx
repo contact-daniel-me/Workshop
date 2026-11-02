@@ -32,6 +32,10 @@ import {
   adminVerifyFaceAttendance,
   type AdminFaceVerificationResult,
 } from "@/lib/attendance-qr.server";
+import {
+  detectFaceInVideo,
+  type LiveFaceDetectionState,
+} from "@/lib/face-detection";
 
 interface ApprovedParticipant {
   id: string;
@@ -64,6 +68,13 @@ export function AdminFaceRecognitionDialog({
   const [faceResult, setFaceResult] = useState<AdminFaceVerificationResult | null>(null);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [detectionState, setDetectionState] = useState<LiveFaceDetectionState>({
+    detected: false,
+    score: 0,
+    brightness: 0,
+    alignment: "no_face",
+    message: "Align face within the oval guide",
+  });
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -256,6 +267,36 @@ export function AdminFaceRecognitionDialog({
       stopCamera();
     };
   }, [open, facingMode, startCamera, stopCamera]);
+
+  // Real-time live face detection & alignment tracking loop
+  useEffect(() => {
+    let animId: number;
+    let isCancelled = false;
+    let lastScanTime = 0;
+
+    const detectLoop = async (now: number) => {
+      if (isCancelled) return;
+      if (videoRef.current && streamRef.current && !isVerifying && !faceResult && !cameraLoading && !cameraError) {
+        if (now - lastScanTime > 150) {
+          lastScanTime = now;
+          const res = await detectFaceInVideo(videoRef.current, canvasRef.current ?? undefined);
+          if (!isCancelled) {
+            setDetectionState(res);
+          }
+        }
+      }
+      animId = requestAnimationFrame(detectLoop);
+    };
+
+    if (open && !cameraError && !cameraLoading && !faceResult) {
+      animId = requestAnimationFrame(detectLoop);
+    }
+
+    return () => {
+      isCancelled = true;
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [open, cameraError, cameraLoading, isVerifying, faceResult]);
 
   // Filter approved participants for 1-to-1 dropdown
   const filteredParticipants = approvedParticipants.filter((p) => {
@@ -467,13 +508,19 @@ export function AdminFaceRecognitionDialog({
                       className="w-full h-full max-h-[440px] object-cover"
                     />
 
-                    {/* Face Oval Reticle Overlay */}
+                    {/* Face Oval Reticle Overlay with Dynamic Detection Feedback */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
-                      <div className="relative w-52 h-68 sm:w-60 sm:h-76 rounded-[50%] border-2 border-purple-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center max-w-[80vw]">
-                        <div className="w-8 h-0.5 bg-purple-400/70 absolute left-2" />
-                        <div className="w-8 h-0.5 bg-purple-400/70 absolute right-2" />
-                        <div className="h-6 w-0.5 bg-purple-400/70 absolute top-2" />
-                        <div className="h-6 w-0.5 bg-purple-400/70 absolute bottom-2" />
+                      <div
+                        className={`relative w-52 h-68 sm:w-60 sm:h-76 rounded-[50%] border-2 transition-all duration-300 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center max-w-[80vw] ${
+                          detectionState.detected
+                            ? "border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]"
+                            : "border-purple-400/80"
+                        }`}
+                      >
+                        <div className={`w-8 h-0.5 absolute left-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
+                        <div className={`w-8 h-0.5 absolute right-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
+                        <div className={`h-6 w-0.5 absolute top-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
+                        <div className={`h-6 w-0.5 absolute bottom-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
                       </div>
                     </div>
 
@@ -490,10 +537,27 @@ export function AdminFaceRecognitionDialog({
                       </Button>
                     </div>
 
-                    {/* Top Prompt Pill */}
-                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 w-[90%] sm:w-auto text-center pointer-events-none">
-                      <Badge className="bg-black/75 text-white backdrop-blur-sm border-white/20 text-xs px-3 py-1 font-medium">
-                        Align participant's face within the oval guide
+                    {/* Top Prompt Pill: Real-time Live Detection & Alignment HUD */}
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 w-[92%] sm:w-auto text-center pointer-events-none">
+                      <Badge
+                        className={`text-white backdrop-blur-sm border text-xs px-3.5 py-1.5 font-medium transition-colors shadow-sm ${
+                          detectionState.detected
+                            ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-200"
+                            : "bg-black/75 border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              detectionState.detected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                            }`}
+                          />
+                          <span>
+                            {detectionState.detected
+                              ? `Face Detected: ${detectionState.score}% • ${detectionState.message}`
+                              : detectionState.message}
+                          </span>
+                        </div>
                       </Badge>
                     </div>
 

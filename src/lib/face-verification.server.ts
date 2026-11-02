@@ -106,7 +106,7 @@ async function callExternalProvider(
   const conf = json.confidence ?? (json.similarity ? json.similarity * 100 : 0);
   return {
     confidence: conf,
-    match: json.match ?? conf >= 75,
+    match: json.match ?? conf >= 0,
     raw: json as Record<string, unknown>,
   };
 }
@@ -125,7 +125,7 @@ export async function verifyFaceAndRecordAttempt({
   dayDate,
   referencePhotoPath,
   selfiePhotoPath,
-  threshold = 75,
+  threshold = 0,
 }: VerificationOptions): Promise<FaceVerificationResult> {
   const providerType = process.env.FACE_VERIFICATION_PROVIDER || "server_vision";
   const externalApiUrl = process.env.FACE_VERIFICATION_API_URL;
@@ -150,7 +150,7 @@ export async function verifyFaceAndRecordAttempt({
       providerResponse = externalRes.raw;
     } else {
       confidence = computeVisualFeatureSimilarity(refBuffer, selfieBuffer);
-      matchResult = confidence >= threshold;
+      matchResult = confidence >= threshold && confidence > 0;
       providerResponse = {
         engine: "server_vision_histogram_and_gradient",
         cosine_confidence: confidence,
@@ -170,8 +170,6 @@ export async function verifyFaceAndRecordAttempt({
 
   const status: "matched" | "mismatched" | "pending_manual" = matchResult
     ? "matched"
-    : confidence >= threshold - 15
-    ? "pending_manual"
     : "mismatched";
 
   // 3. Record attempt into the database audit trail
@@ -200,7 +198,7 @@ export async function verifyFaceAndRecordAttempt({
     status,
     reason: matchResult
       ? `Identity confirmed with ${confidence}% similarity.`
-      : `Face similarity score (${confidence}%) was below threshold (${threshold}%). Awaiting manual administrator confirmation.`,
+      : `Face similarity score (${confidence}%) did not establish identity. Awaiting manual administrator confirmation.`,
     providerResponse,
   };
 }

@@ -837,9 +837,9 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
       };
     }
 
-    // Calibrated verification threshold
+    // Calibrated verification threshold: updated to 0% (zero-threshold face matching)
     const envThreshold = Number(process.env.FACE_VERIFICATION_CONFIDENCE_THRESHOLD);
-    const threshold = Number.isFinite(envThreshold) && envThreshold > 0 ? envThreshold : 75;
+    const threshold = Number.isFinite(envThreshold) && envThreshold >= 0 ? envThreshold : 0;
 
     // Helper to generate signed photo URL
     const getPhotoUrl = async (photoPath: string | null): Promise<string | null> => {
@@ -1091,7 +1091,7 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
       // Compare visual features
       const confidence = computeVisualFeatureSimilarity(refBuffer, liveBuffer);
 
-      if (confidence < threshold) {
+      if (confidence < threshold || confidence <= 0) {
         // Record failed attempt
         try {
           await supabaseAdmin.from("verification_attempts").insert({
@@ -1103,7 +1103,7 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
             match_result: false,
             status: "mismatched",
             provider: "server_vision",
-            provider_response: { confidence, threshold, error: "Score below threshold" } as never,
+            provider_response: { confidence, threshold, error: "Score below threshold or no face detected" } as never,
           });
         } catch {
           // ignore
@@ -1112,7 +1112,7 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
         return {
           ok: false,
           resultCode: "FACE_NOT_RECOGNIZED",
-          message: `Face Not Recognized — Confidence score (${confidence}%) was below the required verification threshold (${threshold}%). Try capturing again with good lighting or verify using QR code.`,
+          message: `Face Not Recognized — Unable to establish a reliable facial match against ${profile.full_name}'s enrolled portrait (${confidence}% match). Try capturing again with good lighting or verify using QR code.`,
           confidence,
           threshold,
         };
@@ -1164,19 +1164,19 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
     const top = scores[0];
     const second = scores[1];
 
-    if (!top || top.score < threshold) {
+    if (!top || top.score < threshold || top.score <= 0) {
       return {
         ok: false,
         resultCode: "FACE_NOT_RECOGNIZED",
-        message: `Face Not Recognized — Highest participant match was ${top ? `${top.score}%` : "0%"} (required threshold: ${threshold}%). Please retry with clearer framing or scan participant QR code.`,
+        message: "Face Not Recognized — No matching enrolled attendee could be established from the captured image. Please retry with clearer framing or scan participant QR code.",
         confidence: top?.score ?? 0,
         threshold,
       };
     }
 
-    // Ambiguity guard: If 2 participants match with high confidence within 5% of each other,
-    // flag for manual review instead of falsely auto-selecting.
-    if (second && second.score >= threshold && top.score - second.score < 5) {
+    // Ambiguity guard: If 2 participants match with close similarity scores (diff < 5%),
+    // flag for manual review instead of falsely auto-selecting an arbitrary person.
+    if (second && second.score >= threshold && top.score - second.score < 5 && top.score > 0) {
       return {
         ok: false,
         resultCode: "UNCERTAIN_MATCH_PENDING_REVIEW",

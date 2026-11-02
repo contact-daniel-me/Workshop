@@ -8,6 +8,10 @@ import {
   type ConfirmAttendanceResult,
   type AdminFaceVerificationResult,
 } from "@/lib/attendance-qr.server";
+import {
+  detectFaceInVideo,
+  type LiveFaceDetectionState,
+} from "@/lib/face-detection";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,6 +104,13 @@ export function AdminQrScannerTab({
   const [faceResult, setFaceResult] = useState<AdminFaceVerificationResult | null>(null);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string>("");
   const [faceSearchTerm, setFaceSearchTerm] = useState("");
+  const [faceDetectionState, setFaceDetectionState] = useState<LiveFaceDetectionState>({
+    detected: false,
+    score: 0,
+    brightness: 0,
+    alignment: "no_face",
+    message: "Align face within the oval guide",
+  });
 
   const faceVideoRef = useRef<HTMLVideoElement | null>(null);
   const faceStreamRef = useRef<MediaStream | null>(null);
@@ -452,6 +463,44 @@ export function AdminQrScannerTab({
     stopQrCamera,
     stopFaceCamera,
   ]);
+
+  // Real-time live face detection & score tracking for AdminQrScannerTab
+  useEffect(() => {
+    let animId: number;
+    let isCancelled = false;
+    let lastScanTime = 0;
+
+    const detectLoop = async (now: number) => {
+      if (isCancelled) return;
+      if (
+        faceVideoRef.current &&
+        faceStreamRef.current &&
+        faceCameraActive &&
+        !faceVerifying &&
+        !faceResult &&
+        !faceCameraLoading &&
+        !faceCameraError
+      ) {
+        if (now - lastScanTime > 150) {
+          lastScanTime = now;
+          const res = await detectFaceInVideo(faceVideoRef.current, faceCanvasRef.current ?? undefined);
+          if (!isCancelled) {
+            setFaceDetectionState(res);
+          }
+        }
+      }
+      animId = requestAnimationFrame(detectLoop);
+    };
+
+    if (activeMode === "face" && faceCameraActive && !faceCameraError && !faceResult) {
+      animId = requestAnimationFrame(detectLoop);
+    }
+
+    return () => {
+      isCancelled = true;
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [activeMode, faceCameraActive, faceCameraError, faceCameraLoading, faceVerifying, faceResult]);
 
   // Capture face and submit to backend verification function
   const handleCaptureAndVerifyFace = async () => {
@@ -1028,32 +1077,31 @@ export function AdminQrScannerTab({
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={toggleFaceCameraFacing}
+                    disabled={faceCameraLoading}
+                    className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Flip Camera
+                  </Button>
                   {faceCameraActive ? (
-                    <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={toggleFaceCameraFacing}
-                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" /> Flip Camera
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={stopFaceCamera}
-                        className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
-                      >
-                        Stop Camera
-                      </Button>
-                    </div>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={stopFaceCamera}
+                      className="gap-1.5 text-xs font-semibold w-full sm:w-auto"
+                    >
+                      Pause Camera
+                    </Button>
                   ) : (
                     <Button
                       size="sm"
                       onClick={() => void startFaceCamera()}
-                      className="gap-2 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-md hover:shadow-lg rounded-xl transition-all duration-200 active:scale-95 px-4 py-2 w-full sm:w-auto justify-center"
+                      className="gap-1.5 text-xs font-semibold bg-purple-700 hover:bg-purple-800 text-white w-full sm:w-auto"
                     >
-                      <ScanFace className="h-4 w-4 text-purple-100" /> Start Face Camera
+                      <Camera className="h-3.5 w-3.5" /> Resume Camera
                     </Button>
                   )}
                 </div>
@@ -1131,76 +1179,114 @@ export function AdminQrScannerTab({
             </CardContent>
           </Card>
 
-          {/* Face Camera Video Window */}
-          {faceCameraActive && (
-            <Card className="overflow-hidden border-2 border-purple-500/40 shadow-lg">
-              <div className="relative bg-black flex flex-col items-center justify-center min-h-[380px] md:min-h-[460px]">
-                {faceCameraLoading && (
-                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/80 text-white">
-                    <RefreshCw className="h-8 w-8 animate-spin text-purple-400" />
-                    <span className="text-sm font-medium">Initializing camera feed…</span>
-                  </div>
-                )}
-
-                <video
-                  ref={faceVideoRef}
-                  playsInline
-                  muted
-                  className="w-full h-full max-h-[520px] object-cover"
-                />
-
-                {/* Face Oval Reticle Overlay */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 sm:p-6">
-                  <div className="relative w-56 h-72 sm:w-64 sm:h-80 md:w-72 md:h-96 rounded-[50%] border-2 border-purple-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center max-w-[85vw]">
-                    {/* Guidance marks */}
-                    <div className="w-12 h-0.5 bg-purple-400/60 absolute left-2" />
-                    <div className="w-12 h-0.5 bg-purple-400/60 absolute right-2" />
-                    <div className="h-8 w-0.5 bg-purple-400/60 absolute top-2" />
-                    <div className="h-8 w-0.5 bg-purple-400/60 absolute bottom-2" />
-                  </div>
+          {/* Face Camera Video Window (Automatically active without manual start button) */}
+          <Card className="overflow-hidden border-2 border-purple-500/40 shadow-lg">
+            <div className="relative bg-black flex flex-col items-center justify-center min-h-[380px] md:min-h-[460px]">
+              {faceCameraLoading && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/85 text-white">
+                  <RefreshCw className="h-8 w-8 animate-spin text-purple-400" />
+                  <span className="text-sm font-medium">Initializing camera video feed…</span>
                 </div>
+              )}
 
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-                  <Badge className="bg-black/75 text-white backdrop-blur-sm border-white/20 text-xs px-3 py-1">
-                    Align participant's face within the oval guide
-                  </Badge>
-                </div>
-
-                {/* Camera Action Control */}
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3">
+              {faceCameraError ? (
+                <div className="p-6 text-center text-white space-y-3 max-w-sm z-10">
+                  <AlertTriangle className="h-10 w-10 text-amber-400 mx-auto" />
+                  <p className="text-sm font-semibold">{faceCameraError}</p>
                   <Button
-                    size="lg"
-                    onClick={handleCaptureAndVerifyFace}
-                    disabled={faceVerifying}
-                    className="gap-2.5 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-2xl px-8 py-6 rounded-full text-base transition-all duration-200 active:scale-95 border border-white/20"
+                    size="sm"
+                    onClick={() => void startFaceCamera()}
+                    className="gap-1.5 font-bold bg-purple-700 text-white cursor-pointer"
                   >
-                    {faceVerifying ? (
-                      <>
-                        <RefreshCw className="h-5 w-5 animate-spin" /> Verifying Biometrics…
-                      </>
-                    ) : (
-                      <>
-                        <ScanFace className="h-5 w-5" /> Capture & Verify Face
-                      </>
-                    )}
+                    <RotateCcw className="h-3.5 w-3.5" /> Retry Camera
                   </Button>
                 </div>
-              </div>
-            </Card>
-          )}
-
-          {/* Face Camera Error Alert */}
-          {faceCameraError && (
-            <Card className="border-destructive/30 bg-destructive/10 p-4">
-              <div className="flex items-start gap-3 text-destructive">
-                <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="text-sm font-bold">Camera Unavailable</p>
-                  <p className="text-xs leading-relaxed">{faceCameraError}</p>
+              ) : !faceCameraActive ? (
+                <div className="p-6 text-center text-white space-y-3 max-w-sm z-10">
+                  <Camera className="h-10 w-10 text-purple-300 mx-auto" />
+                  <p className="text-sm font-semibold">Camera is paused</p>
+                  <Button
+                    size="sm"
+                    onClick={() => void startFaceCamera()}
+                    className="gap-1.5 font-bold bg-purple-700 text-white cursor-pointer"
+                  >
+                    <Camera className="h-3.5 w-3.5" /> Resume Live Camera
+                  </Button>
                 </div>
-              </div>
-            </Card>
-          )}
+              ) : (
+                <>
+                  <video
+                    ref={faceVideoRef}
+                    playsInline
+                    autoPlay
+                    muted
+                    className="w-full h-full max-h-[520px] object-cover"
+                  />
+
+                  {/* Face Oval Reticle Overlay with Dynamic Detection Feedback */}
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 sm:p-6">
+                    <div
+                      className={`relative w-56 h-72 sm:w-64 sm:h-80 md:w-72 md:h-96 rounded-[50%] border-2 transition-all duration-300 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center max-w-[85vw] ${
+                        faceDetectionState.detected
+                          ? "border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]"
+                          : "border-purple-400/80"
+                      }`}
+                    >
+                      {/* Guidance marks */}
+                      <div className={`w-12 h-0.5 absolute left-2 transition-colors ${faceDetectionState.detected ? "bg-emerald-400" : "bg-purple-400/60"}`} />
+                      <div className={`w-12 h-0.5 absolute right-2 transition-colors ${faceDetectionState.detected ? "bg-emerald-400" : "bg-purple-400/60"}`} />
+                      <div className={`h-8 w-0.5 absolute top-2 transition-colors ${faceDetectionState.detected ? "bg-emerald-400" : "bg-purple-400/60"}`} />
+                      <div className={`h-8 w-0.5 absolute bottom-2 transition-colors ${faceDetectionState.detected ? "bg-emerald-400" : "bg-purple-400/60"}`} />
+                    </div>
+                  </div>
+
+                  {/* Top Live Face Detection HUD Pill */}
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-[92%] sm:w-auto text-center pointer-events-none">
+                    <Badge
+                      className={`text-white backdrop-blur-sm border text-xs px-3.5 py-1.5 font-medium transition-colors shadow-sm ${
+                        faceDetectionState.detected
+                          ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-200"
+                          : "bg-black/75 border-white/20"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 justify-center">
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            faceDetectionState.detected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                          }`}
+                        />
+                        <span>
+                          {faceDetectionState.detected
+                            ? `Face Detected: ${faceDetectionState.score}% • ${faceDetectionState.message}`
+                            : faceDetectionState.message}
+                        </span>
+                      </div>
+                    </Badge>
+                  </div>
+
+                  {/* Camera Action Control */}
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3">
+                    <Button
+                      size="lg"
+                      onClick={handleCaptureAndVerifyFace}
+                      disabled={faceVerifying}
+                      className="gap-2.5 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-2xl px-8 py-6 rounded-full text-base transition-all duration-200 active:scale-95 border border-white/20 cursor-pointer"
+                    >
+                      {faceVerifying ? (
+                        <>
+                          <RefreshCw className="h-5 w-5 animate-spin" /> Verifying Biometrics…
+                        </>
+                      ) : (
+                        <>
+                          <ScanFace className="h-5 w-5" /> Capture & Verify Face
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
 
           {/* Face Verifying Spinner */}
           {faceVerifying && (
