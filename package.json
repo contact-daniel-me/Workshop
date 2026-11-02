@@ -12,8 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "biometric:bridge": "node scripts/startek-bridge.js"
+    "test:watch": "vitest"
   },
   "overrides": {
     "rolldown": "1.2.1"

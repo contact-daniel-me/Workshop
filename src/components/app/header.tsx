@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/use-me";
-import { QrCode, LogOut, User, ShieldCheck, Fingerprint } from "lucide-react";
+import { QrCode, LogOut, User, ShieldCheck } from "lucide-react";
 
 export function AppHeader() {
   const { data: me } = useMe();
@@ -44,25 +44,14 @@ export function AppHeader() {
             </Link>
 
             {me?.isStaff && (
-              <>
-                <Link
-                  to="/admin"
-                  className="rounded-lg px-3 py-1.5 font-medium transition-colors hover:bg-muted text-muted-foreground flex items-center gap-1"
-                  activeProps={{ className: "bg-muted font-bold text-foreground shadow-2xs" }}
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
-                  <span>Admin</span>
-                </Link>
-                <Link
-                  to="/biometric-lab"
-                  className="rounded-lg px-3 py-1.5 font-medium transition-colors hover:bg-muted text-muted-foreground flex items-center gap-1"
-                  activeProps={{ className: "bg-muted font-bold text-foreground shadow-2xs" }}
-                >
-                  <Fingerprint className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                  <span className="hidden sm:inline">Biometric Lab</span>
-                  <span className="sm:hidden">Lab</span>
-                </Link>
-              </>
+              <Link
+                to="/admin"
+                className="rounded-lg px-3 py-1.5 font-medium transition-colors hover:bg-muted text-muted-foreground flex items-center gap-1"
+                activeProps={{ className: "bg-muted font-bold text-foreground shadow-2xs" }}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span>Admin</span>
+              </Link>
             )}
           </nav>
 

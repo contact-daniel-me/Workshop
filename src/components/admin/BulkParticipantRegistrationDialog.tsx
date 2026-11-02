@@ -784,3 +784,4 @@ export function BulkParticipantRegistrationDialog({
     </Dialog>
   );
 }
+
