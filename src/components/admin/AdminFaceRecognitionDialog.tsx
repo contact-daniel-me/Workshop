@@ -27,6 +27,9 @@ import {
   Calendar,
   Users,
   Target,
+  User,
+  Search,
+  X,
 } from "lucide-react";
 import {
   adminVerifyFaceAttendance,
@@ -319,6 +322,8 @@ export function AdminFaceRecognitionDialog({
     );
   });
 
+  const selectedParticipant = approvedParticipants.find((p) => p.id === selectedParticipantId);
+
   return (
     <Dialog
       open={open}
@@ -524,6 +529,73 @@ export function AdminFaceRecognitionDialog({
                   </div>
                 </div>
 
+                {/* Participant Selector: Select Specific Attendee or Auto-Detect */}
+                <div className="w-full max-w-md mx-auto p-3.5 rounded-xl bg-background border text-left space-y-2.5 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 text-purple-600" />
+                      Select Participant to Verify
+                    </span>
+                    {selectedParticipantId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedParticipantId("");
+                          setSearchTerm("");
+                        }}
+                        className="text-[11px] text-purple-600 hover:text-purple-700 font-semibold hover:underline cursor-pointer flex items-center gap-1"
+                      >
+                        <X className="h-3 w-3" /> Auto Match All
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">
+                        Optional (Auto-detect active)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name, code or email…"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-8 text-xs h-8.5 bg-muted/30"
+                      />
+                    </div>
+
+                    <select
+                      value={selectedParticipantId}
+                      onChange={(e) => setSelectedParticipantId(e.target.value)}
+                      className="text-xs font-medium rounded-lg border bg-background px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-600 w-full cursor-pointer text-foreground"
+                    >
+                      <option value="">
+                        🔍 Auto Match (Search all {approvedParticipants.length} enrolled participants)
+                      </option>
+                      {filteredParticipants.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.full_name} ({p.participant_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedParticipant && (
+                    <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs text-purple-900 dark:text-purple-200">
+                      <div className="flex items-center gap-2 truncate">
+                        <CheckCircle2 className="h-4 w-4 text-purple-600 shrink-0" />
+                        <span className="truncate">
+                          Target: <strong>{selectedParticipant.full_name}</strong> ({selectedParticipant.participant_code})
+                        </span>
+                      </div>
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200 shrink-0">
+                        1-to-1 Match
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2">
                   <Button
                     size="lg"
@@ -541,17 +613,43 @@ export function AdminFaceRecognitionDialog({
             /* STATE 3B: ACTIVE CAMERA FACE SCANNER */
             /* ========================================================================= */
             <div className="space-y-3">
-              {/* Active session banner */}
-              <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs font-medium text-purple-900 dark:text-purple-200">
-                <span>Active Target: <strong>{sessionType === "entry" ? "Entry Attendance" : "Exit Attendance"}</strong></span>
+              {/* Active session banner with attendee indicator */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs font-medium text-purple-900 dark:text-purple-200">
+                <div className="flex items-center gap-2 truncate">
+                  <span>Session: <strong>{sessionType === "entry" ? "Entry" : "Exit"}</strong></span>
+                  <span className="text-muted-foreground">|</span>
+                  <span className="truncate">
+                    Target: <strong>{selectedParticipant ? `${selectedParticipant.full_name} (${selectedParticipant.participant_code})` : "Auto Match (1-to-N)"}</strong>
+                  </span>
+                </div>
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={stopCamera}
-                  className="h-6 text-xs text-destructive hover:bg-destructive/10 px-2"
+                  className="h-6 text-xs text-destructive hover:bg-destructive/10 px-2 cursor-pointer"
                 >
                   Cancel / Stop Camera
                 </Button>
+              </div>
+
+              {/* Quick participant switcher while camera is active */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-muted/40 border text-xs">
+                <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 shrink-0">
+                  <User className="h-3.5 w-3.5 text-purple-600" />
+                  Target Attendee:
+                </span>
+                <select
+                  value={selectedParticipantId}
+                  onChange={(e) => setSelectedParticipantId(e.target.value)}
+                  className="text-xs font-medium rounded-md border bg-background px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-purple-600 flex-1 min-w-[200px] cursor-pointer"
+                >
+                  <option value="">🔍 Auto Match All ({approvedParticipants.length} participants)</option>
+                  {approvedParticipants.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name} ({p.participant_code})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Live Video Feed with Oval Reticle */}

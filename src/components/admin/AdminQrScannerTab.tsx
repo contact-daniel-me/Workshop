@@ -1215,6 +1215,43 @@ export function AdminQrScannerTab({
                 </div>
               </div>
             </CardHeader>
+
+            <CardContent className="pt-0 p-4 sm:p-6 sm:pt-0 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-muted/40 border text-xs">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-purple-600 shrink-0" />
+                  <div>
+                    <span className="font-bold text-foreground">Target Participant</span>
+                    <p className="text-[11px] text-muted-foreground">Select a specific attendee or leave on auto-match</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                  <div className="relative w-full sm:w-56">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search name or code…"
+                      value={faceSearchTerm}
+                      onChange={(e) => setFaceSearchTerm(e.target.value)}
+                      className="pl-8 text-xs h-8.5 bg-background"
+                    />
+                  </div>
+
+                  <select
+                    value={selectedParticipantId}
+                    onChange={(e) => setSelectedParticipantId(e.target.value)}
+                    className="text-xs font-medium rounded-lg border bg-background px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-600 w-full sm:w-72 cursor-pointer text-foreground"
+                  >
+                    <option value="">🔍 Auto Match All ({approvedParticipants.length} attendees)</option>
+                    {filteredApproved.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name} ({p.participant_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </CardContent>
           </Card>
 
           {/* Face Camera Video Window (Automatically active without manual start button) */}
