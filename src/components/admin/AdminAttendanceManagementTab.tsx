@@ -668,52 +668,52 @@ export function AdminAttendanceManagementTab({
           </CardContent>
         </Card>
 
-        {/* Morning Session Present */}
+        {/* Entry Attendance Present */}
         <Card className="shadow-xs border bg-amber-500/5 border-amber-500/20">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
-            <CardTitle className="text-xs font-semibold uppercase text-amber-800 dark:text-amber-400">Morning Session</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase text-amber-800 dark:text-amber-400">Entry Attendance</CardTitle>
             <Sun className="h-4 w-4 text-amber-600" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold font-display text-amber-700 dark:text-amber-300">
               {overviewStats.morningCount}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Present in Morning</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Checked In (Entry)</p>
           </CardContent>
         </Card>
 
-        {/* Afternoon Session Present */}
+        {/* Exit Attendance Present */}
         <Card className="shadow-xs border bg-orange-500/5 border-orange-500/20">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
-            <CardTitle className="text-xs font-semibold uppercase text-orange-800 dark:text-orange-400">Afternoon Session</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase text-orange-800 dark:text-orange-400">Exit Attendance</CardTitle>
             <Sunset className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold font-display text-orange-700 dark:text-orange-300">
               {overviewStats.afternoonCount}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Present in Afternoon</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Checked Out (Exit)</p>
           </CardContent>
         </Card>
 
         {/* Both Sessions Present */}
         <Card className="shadow-xs border bg-emerald-500/5 border-emerald-500/20">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
-            <CardTitle className="text-xs font-semibold uppercase text-emerald-800 dark:text-emerald-400">Both Sessions</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase text-emerald-800 dark:text-emerald-400">Complete (Both)</CardTitle>
             <CheckCheck className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold font-display text-emerald-700 dark:text-emerald-300">
               {overviewStats.bothCount}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Full Day Verified</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Both Entry & Exit Verified</p>
           </CardContent>
         </Card>
 
         {/* Incomplete Attendance */}
         <Card className="shadow-xs border bg-purple-500/5 border-purple-500/20">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
-            <CardTitle className="text-xs font-semibold uppercase text-purple-800 dark:text-purple-400">Incomplete</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase text-purple-800 dark:text-purple-400">Single Session</CardTitle>
             <Clock className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
@@ -727,14 +727,14 @@ export function AdminAttendanceManagementTab({
         {/* No Attendance */}
         <Card className="shadow-xs border bg-muted/30">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
-            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Unmarked / Absent</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Absent</CardTitle>
             <X className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold font-display text-muted-foreground">
               {overviewStats.absentCount}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">0 of 2 Sessions Marked</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Neither Entry nor Exit</p>
           </CardContent>
         </Card>
       </div>
@@ -771,7 +771,7 @@ export function AdminAttendanceManagementTab({
               onClick={() => handleTriggerBulkAction("mark_all_morning")}
               className="h-8 text-xs font-semibold gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50 cursor-pointer disabled:opacity-40"
             >
-              <Sun className="h-3.5 w-3.5 text-amber-600" /> Morning Present
+              <Sun className="h-3.5 w-3.5 text-amber-600" /> Entry Present
             </Button>
 
             <Button
@@ -782,7 +782,7 @@ export function AdminAttendanceManagementTab({
               onClick={() => handleTriggerBulkAction("mark_all_afternoon")}
               className="h-8 text-xs font-semibold gap-1.5 border-orange-300 text-orange-800 hover:bg-orange-50 cursor-pointer disabled:opacity-40"
             >
-              <Sunset className="h-3.5 w-3.5 text-orange-600" /> Afternoon Present
+              <Sunset className="h-3.5 w-3.5 text-orange-600" /> Exit Present
             </Button>
 
             <Button
@@ -792,7 +792,7 @@ export function AdminAttendanceManagementTab({
               onClick={() => handleTriggerBulkAction("mark_all_both")}
               className="h-8 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 shadow-xs cursor-pointer disabled:opacity-40"
             >
-              <CheckCheck className="h-3.5 w-3.5" /> Both Sessions Present
+              <CheckCheck className="h-3.5 w-3.5" /> Both (Entry & Exit) Present
             </Button>
 
             {/* Separator */}
@@ -806,7 +806,7 @@ export function AdminAttendanceManagementTab({
               onClick={() => handleTriggerBulkAction("clear_all_morning")}
               className="h-8 text-xs font-semibold gap-1.5 border-muted text-muted-foreground hover:text-destructive hover:border-destructive/30 cursor-pointer"
             >
-              <RotateCcw className="h-3 w-3" /> Clear Morning
+              <RotateCcw className="h-3 w-3" /> Clear Entry
             </Button>
 
             <Button
@@ -815,7 +815,7 @@ export function AdminAttendanceManagementTab({
               onClick={() => handleTriggerBulkAction("clear_all_afternoon")}
               className="h-8 text-xs font-semibold gap-1.5 border-muted text-muted-foreground hover:text-destructive hover:border-destructive/30 cursor-pointer"
             >
-              <RotateCcw className="h-3 w-3" /> Clear Afternoon
+              <RotateCcw className="h-3 w-3" /> Clear Exit
             </Button>
 
             <Button
@@ -824,7 +824,7 @@ export function AdminAttendanceManagementTab({
               onClick={() => handleTriggerBulkAction("reset_all_both")}
               className="h-8 text-xs font-bold gap-1.5 shadow-xs cursor-pointer"
             >
-              <RotateCcw className="h-3.5 w-3.5" /> Reset Both Sessions
+              <RotateCcw className="h-3.5 w-3.5" /> Reset Both
             </Button>
           </div>
         </CardContent>
@@ -863,9 +863,9 @@ export function AdminAttendanceManagementTab({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Participants ({approvedParticipants.length})</SelectItem>
-                  <SelectItem value="both">Both Sessions Present ({overviewStats.bothCount})</SelectItem>
-                  <SelectItem value="morning">Morning Present ({overviewStats.morningCount})</SelectItem>
-                  <SelectItem value="afternoon">Afternoon Present ({overviewStats.afternoonCount})</SelectItem>
+                  <SelectItem value="both">Complete Attendance ({overviewStats.bothCount})</SelectItem>
+                  <SelectItem value="morning">Entry Present ({overviewStats.morningCount})</SelectItem>
+                  <SelectItem value="afternoon">Exit Present ({overviewStats.afternoonCount})</SelectItem>
                   <SelectItem value="incomplete">Incomplete Attendance ({overviewStats.incompleteCount})</SelectItem>
                   <SelectItem value="absent">Unmarked / Absent ({overviewStats.absentCount})</SelectItem>
                 </SelectContent>
@@ -888,8 +888,8 @@ export function AdminAttendanceManagementTab({
                   </th>
                   <th className="py-3 px-4">Participant ID</th>
                   <th className="py-3 px-4">Participant Name</th>
-                  <th className="py-3 px-4 text-center">Morning Session</th>
-                  <th className="py-3 px-4 text-center">Afternoon Session</th>
+                  <th className="py-3 px-4 text-center">Entry Attendance</th>
+                  <th className="py-3 px-4 text-center">Exit Attendance</th>
                   <th className="py-3 px-4 text-center">Overall Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
@@ -944,12 +944,19 @@ export function AdminAttendanceManagementTab({
                           </div>
                         </td>
 
-                        {/* Morning Session Status */}
+                        {/* Entry Session Status */}
                         <td className="py-3 px-4 text-center">
                           {sessionInfo.morning ? (
-                            <Badge className="bg-emerald-600 text-white gap-1 text-xs font-medium px-2.5 py-0.5">
-                              <Check className="h-3 w-3" /> Present
-                            </Badge>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Badge className="bg-emerald-600 text-white gap-1 text-xs font-medium px-2.5 py-0.5">
+                                <Check className="h-3 w-3" /> Present
+                              </Badge>
+                              {sessionInfo.entryTime && (
+                                <span className="text-[10px] text-muted-foreground font-mono">
+                                  {sessionInfo.entryTime}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             <Badge variant="outline" className="border-border text-muted-foreground text-xs px-2.5 py-0.5">
                               Not Marked
@@ -957,12 +964,19 @@ export function AdminAttendanceManagementTab({
                           )}
                         </td>
 
-                        {/* Afternoon Session Status */}
+                        {/* Exit Session Status */}
                         <td className="py-3 px-4 text-center">
                           {sessionInfo.afternoon ? (
-                            <Badge className="bg-emerald-600 text-white gap-1 text-xs font-medium px-2.5 py-0.5">
-                              <Check className="h-3 w-3" /> Present
-                            </Badge>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Badge className="bg-emerald-600 text-white gap-1 text-xs font-medium px-2.5 py-0.5">
+                                <Check className="h-3 w-3" /> Present
+                              </Badge>
+                              {sessionInfo.exitTime && (
+                                <span className="text-[10px] text-muted-foreground font-mono">
+                                  {sessionInfo.exitTime}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             <Badge variant="outline" className="border-border text-muted-foreground text-xs px-2.5 py-0.5">
                               Not Marked
@@ -1008,36 +1022,36 @@ export function AdminAttendanceManagementTab({
                                 </DropdownMenuItem>
                               ) : (
                                 <>
-                                  {/* Mark Morning Present */}
+                                  {/* Mark Entry Present */}
                                   <DropdownMenuItem
                                     onClick={() =>
                                       setSingleActionTarget({
                                         participant: p,
                                         action: "mark_morning",
-                                        title: "Mark Morning Present",
+                                        title: "Mark Entry Present",
                                         isDestructive: false,
                                       })
                                     }
                                     className="cursor-pointer gap-2 text-xs"
                                   >
                                     <Sun className="h-3.5 w-3.5 text-amber-600" />
-                                    <span>Mark Morning Present</span>
+                                    <span>Mark Entry Present</span>
                                   </DropdownMenuItem>
 
-                                  {/* Mark Afternoon Present */}
+                                  {/* Mark Exit Present */}
                                   <DropdownMenuItem
                                     onClick={() =>
                                       setSingleActionTarget({
                                         participant: p,
                                         action: "mark_afternoon",
-                                        title: "Mark Afternoon Present",
+                                        title: "Mark Exit Present",
                                         isDestructive: false,
                                       })
                                     }
                                     className="cursor-pointer gap-2 text-xs"
                                   >
                                     <Sunset className="h-3.5 w-3.5 text-orange-600" />
-                                    <span>Mark Afternoon Present</span>
+                                    <span>Mark Exit Present</span>
                                   </DropdownMenuItem>
 
                                   {/* Mark Both Sessions Present */}
@@ -1046,50 +1060,50 @@ export function AdminAttendanceManagementTab({
                                       setSingleActionTarget({
                                         participant: p,
                                         action: "mark_both",
-                                        title: "Mark Both Sessions Present",
+                                        title: "Mark Both (Entry & Exit) Present",
                                         isDestructive: false,
                                       })
                                     }
                                     className="cursor-pointer gap-2 text-xs font-semibold text-emerald-700"
                                   >
                                     <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
-                                    <span>Mark Both Sessions Present</span>
+                                    <span>Mark Both (Entry & Exit) Present</span>
                                   </DropdownMenuItem>
                                 </>
                               )}
 
                               <DropdownMenuSeparator />
 
-                              {/* Clear Morning Attendance */}
+                              {/* Clear Entry Attendance */}
                               <DropdownMenuItem
                                 onClick={() =>
                                   setSingleActionTarget({
                                     participant: p,
                                     action: "clear_morning",
-                                    title: "Clear Morning Attendance",
+                                    title: "Clear Entry Attendance",
                                     isDestructive: true,
                                   })
                                 }
                                 className="cursor-pointer gap-2 text-xs text-muted-foreground hover:text-destructive"
                               >
                                 <RotateCcw className="h-3.5 w-3.5" />
-                                <span>Clear Morning Attendance</span>
+                                <span>Clear Entry Attendance</span>
                               </DropdownMenuItem>
 
-                              {/* Clear Afternoon Attendance */}
+                              {/* Clear Exit Attendance */}
                               <DropdownMenuItem
                                 onClick={() =>
                                   setSingleActionTarget({
                                     participant: p,
                                     action: "clear_afternoon",
-                                    title: "Clear Afternoon Attendance",
+                                    title: "Clear Exit Attendance",
                                     isDestructive: true,
                                   })
                                 }
                                 className="cursor-pointer gap-2 text-xs text-muted-foreground hover:text-destructive"
                               >
                                 <RotateCcw className="h-3.5 w-3.5" />
-                                <span>Clear Afternoon Attendance</span>
+                                <span>Clear Exit Attendance</span>
                               </DropdownMenuItem>
 
                               {/* Reset Both Sessions */}

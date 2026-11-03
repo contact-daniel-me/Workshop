@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe, useSettings, useMyAttendance, signedUrls } from "@/lib/use-me";
-import { todayLocal, workshopDays, addDays } from "@/lib/attendance";
+import { todayLocal, workshopDays, addDays, formatIstTimestamp, extractExitTimestamp } from "@/lib/attendance";
 import { generateIndividualReportWorkbook, downloadExcelFile } from "@/lib/excel";
 import { StatusPill, DayCell } from "@/components/app/status";
 import { QrCheckinDialog } from "@/components/app/qr-checkin-dialog";
@@ -65,12 +65,24 @@ function DashboardPage() {
   const { data: attData } = useMyAttendance();
 
   const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [scanSessionType, setScanSessionType] = useState<"entry" | "exit">("entry");
   const [idModalOpen, setIdModalOpen] = useState(false);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  // Auto-detect QR token / code in URL when participant scans Projector QR with native camera
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    const code = params.get("code");
+    if (token || code) {
+      setScanModalOpen(true);
+    }
+  }, []);
 
   // Load signed avatar photo
   useEffect(() => {
@@ -137,6 +149,15 @@ function DashboardPage() {
   const isApproved = me?.profile?.verification_status === "verified";
   const isPending = !me?.profile?.verification_status || me?.profile?.verification_status === "pending";
   const isRejected = me?.profile?.verification_status === "rejected";
+
+  const entryPresent = Boolean(
+    todayRecord &&
+      (todayRecord.morning_status === "present" ||
+        (todayRecord.status === "present" && !todayRecord.morning_status)),
+  );
+  const entryTime = todayRecord?.checked_in_at ? formatIstTimestamp(todayRecord.checked_in_at) : null;
+  const exitPresent = Boolean(todayRecord && todayRecord.afternoon_status === "present");
+  const exitTime = todayRecord ? extractExitTimestamp(todayRecord) : null;
 
   const digitalIdData = useMemo(() => {
     if (!me?.user || !me?.profile) return null;
@@ -268,7 +289,10 @@ function DashboardPage() {
             workshopName={settings?.name}
             workshopStartDate={settings?.start_date}
             workshopDurationDays={settings?.duration_days}
-            onOpenScanner={() => setScanModalOpen(true)}
+            onOpenScanner={() => {
+              setScanSessionType(entryPresent ? "exit" : "entry");
+              setScanModalOpen(true);
+            }}
             onOpenDigitalId={() => setIdModalOpen(true)}
             onDownloadExcel={handleDownloadExcel}
             onOpenPhotoModal={() => setPhotoModalOpen(true)}
@@ -278,6 +302,120 @@ function DashboardPage() {
               void qc.invalidateQueries({ queryKey: ["my_attendance"] });
             }}
           />
+
+          {/* TWO SEPARATED ATTENDANCE ACTIONS: ENTRY & EXIT */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* ENTRY ATTENDANCE */}
+            <Card className={`shadow-sm border-2 transition-all ${
+              entryPresent ? "border-emerald-500/50 bg-emerald-500/5" : "border-primary/20 bg-card"
+            }`}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg ${entryPresent ? "bg-emerald-500/10 text-emerald-600" : "bg-primary/10 text-primary"}`}>
+                      <CheckCircle2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="font-display text-base font-bold">ENTRY ATTENDANCE</CardTitle>
+                      <CardDescription className="text-xs">Record your arrival check-in</CardDescription>
+                    </div>
+                  </div>
+                  <Badge variant={entryPresent ? "default" : "secondary"} className={entryPresent ? "bg-emerald-600 font-mono text-xs" : "font-mono text-xs"}>
+                    {entryPresent ? "PRESENT" : "NOT MARKED"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="p-2.5 rounded-lg bg-muted/40 text-xs font-mono space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Session Date:</span>
+                    <span className="font-semibold">{today}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Entry Timestamp:</span>
+                    <span className="font-semibold text-foreground">{entryTime || "—"}</span>
+                  </div>
+                </div>
+
+                <Button
+                  className={`w-full font-bold gap-2 ${
+                    entryPresent
+                      ? "bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed"
+                      : "bg-primary text-primary-foreground"
+                  }`}
+                  disabled={entryPresent || !isWorkshopDay}
+                  onClick={() => {
+                    setScanSessionType("entry");
+                    setScanModalOpen(true);
+                  }}
+                >
+                  <Camera className="h-4 w-4" />
+                  {entryPresent ? "Entry Recorded" : "Mark Entry Attendance"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* EXIT ATTENDANCE */}
+            <Card className={`shadow-sm border-2 transition-all ${
+              exitPresent ? "border-emerald-500/50 bg-emerald-500/5" : "border-primary/20 bg-card"
+            }`}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg ${exitPresent ? "bg-emerald-500/10 text-emerald-600" : "bg-primary/10 text-primary"}`}>
+                      <Clock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="font-display text-base font-bold">EXIT ATTENDANCE</CardTitle>
+                      <CardDescription className="text-xs">Record your departure check-out</CardDescription>
+                    </div>
+                  </div>
+                  <Badge variant={exitPresent ? "default" : "secondary"} className={exitPresent ? "bg-emerald-600 font-mono text-xs" : "font-mono text-xs"}>
+                    {exitPresent ? "PRESENT" : "NOT MARKED"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="p-2.5 rounded-lg bg-muted/40 text-xs font-mono space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Session Date:</span>
+                    <span className="font-semibold">{today}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Exit Timestamp:</span>
+                    <span className="font-semibold text-foreground">{exitTime || "—"}</span>
+                  </div>
+                </div>
+
+                <Button
+                  className={`w-full font-bold gap-2 ${
+                    exitPresent
+                      ? "bg-muted text-muted-foreground hover:bg-muted cursor-not-allowed"
+                      : !entryPresent
+                      ? "bg-muted/70 text-muted-foreground cursor-not-allowed"
+                      : "bg-primary text-primary-foreground"
+                  }`}
+                  disabled={exitPresent || !entryPresent || !isWorkshopDay}
+                  onClick={() => {
+                    setScanSessionType("exit");
+                    setScanModalOpen(true);
+                  }}
+                >
+                  <Camera className="h-4 w-4" />
+                  {exitPresent
+                    ? "Exit Recorded"
+                    : !entryPresent
+                    ? "Entry Required First"
+                    : "Mark Exit Attendance"}
+                </Button>
+                {!entryPresent && !exitPresent && (
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Note: Entry attendance must be recorded before recording exit.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
           {/* 2. ATTENDANCE METRICS KPI GRID */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -506,6 +644,7 @@ function DashboardPage() {
         onOpenChange={setScanModalOpen}
         requireSelfie={settings?.require_selfie}
         userId={me?.user?.id}
+        sessionType={scanSessionType}
       />
 
       {/* Upload/Update Profile Photo Modal */}

@@ -105,14 +105,20 @@ describe("excel export generation", () => {
 describe("resolveSessionAttendance", () => {
   it("resolves null/undefined attendance to absent", () => {
     expect(resolveSessionAttendance(null)).toEqual({
+      entry: false,
+      exit: false,
       morning: false,
       afternoon: false,
       overall: "absent",
+      detailedStatus: "Absent",
     });
     expect(resolveSessionAttendance(undefined)).toEqual({
+      entry: false,
+      exit: false,
       morning: false,
       afternoon: false,
       overall: "absent",
+      detailedStatus: "Absent",
     });
   });
 
@@ -124,13 +130,18 @@ describe("resolveSessionAttendance", () => {
       method: "qr",
     });
     expect(res).toEqual({
+      entry: true,
+      exit: true,
       morning: true,
       afternoon: true,
+      entryTime: null,
+      exitTime: null,
       overall: "present",
+      detailedStatus: "Complete",
     });
   });
 
-  it("resolves morning only present as incomplete", () => {
+  it("resolves morning only present as incomplete (Entry Only)", () => {
     const res = resolveSessionAttendance({
       status: "present",
       morning_status: "present",
@@ -138,13 +149,18 @@ describe("resolveSessionAttendance", () => {
       method: "manual",
     });
     expect(res).toEqual({
+      entry: true,
+      exit: false,
       morning: true,
       afternoon: false,
+      entryTime: null,
+      exitTime: null,
       overall: "incomplete",
+      detailedStatus: "Entry Only",
     });
   });
 
-  it("resolves afternoon only present as incomplete", () => {
+  it("resolves afternoon only present as incomplete (Exit Only)", () => {
     const res = resolveSessionAttendance({
       status: "present",
       morning_status: null,
@@ -152,9 +168,14 @@ describe("resolveSessionAttendance", () => {
       method: "manual",
     });
     expect(res).toEqual({
+      entry: false,
+      exit: true,
       morning: false,
       afternoon: true,
+      entryTime: null,
+      exitTime: null,
       overall: "incomplete",
+      detailedStatus: "Exit Only",
     });
   });
 
@@ -166,22 +187,33 @@ describe("resolveSessionAttendance", () => {
       method: "manual",
     });
     expect(res).toEqual({
+      entry: true,
+      exit: true,
       morning: true,
       afternoon: true,
+      entryTime: null,
+      exitTime: null,
       overall: "present",
+      detailedStatus: "Complete",
     });
   });
 
   it("resolves pending and excused correctly", () => {
     expect(resolveSessionAttendance({ status: "pending" })).toEqual({
+      entry: false,
+      exit: false,
       morning: false,
       afternoon: false,
       overall: "pending",
+      detailedStatus: "Pending",
     });
     expect(resolveSessionAttendance({ status: "excused" })).toEqual({
+      entry: false,
+      exit: false,
       morning: false,
       afternoon: false,
       overall: "excused",
+      detailedStatus: "Excused",
     });
   });
 });

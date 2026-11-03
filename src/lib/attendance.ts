@@ -83,6 +83,57 @@ export function todayLocal(now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now);
 }
 
+/** Formats a timestamp into clean Indian Standard Time (IST), e.g. "09:05:32 AM IST" */
+export function formatIstTimestamp(dateStr?: string | Date | null): string {
+  if (!dateStr) return "-";
+  try {
+    const d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
+    if (isNaN(d.getTime())) return "-";
+    return (
+      new Intl.DateTimeFormat("en-IN", {
+        timeZone: TZ,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }).format(d) + " IST"
+    );
+  } catch {
+    return "-";
+  }
+}
+
+/** Formats a date into clean Indian Standard Time (IST), e.g. "03 Nov 2026" */
+export function formatIstDate(dateStr?: string | Date | null): string {
+  if (!dateStr) return "-";
+  try {
+    const d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
+    if (isNaN(d.getTime())) return "-";
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: TZ,
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(d);
+  } catch {
+    return "-";
+  }
+}
+
+/** Extracts stored exit timestamp from remarks or updated_at */
+export function extractExitTimestamp(
+  remarks?: string | null,
+  updatedAt?: string | null,
+  hasExit?: boolean,
+): string | null {
+  if (!hasExit) return null;
+  if (remarks) {
+    const match = remarks.match(/EXIT_AT:([^\s;,]+)/);
+    if (match && match[1]) return match[1];
+  }
+  return updatedAt ?? null;
+}
+
 export function addDays(date: string, n: number): string {
   const d = new Date(date + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
@@ -203,55 +254,147 @@ export function dayState(
   return "Not Held";
 }
 
-export type SessionSlot = "morning" | "afternoon" | "both";
+export type SessionSlot = "entry" | "exit" | "both" | "morning" | "afternoon";
 
 export interface SessionAttendanceInfo {
-  morning: boolean;
-  afternoon: boolean;
+  entry: boolean;
+  exit: boolean;
+  morning: boolean; // backward-compat alias to entry
+  afternoon: boolean; // backward-compat alias to exit
+  entryTime?: string | null;
+  exitTime?: string | null;
   overall: "present" | "incomplete" | "absent" | "pending" | "excused";
+  detailedStatus: "Complete" | "Entry Only" | "Exit Only" | "Absent" | "Pending" | "Excused";
 }
 
 /**
- * Resolves session-wise attendance (Morning / Afternoon / Overall).
- * Handles explicit session flags as well as legacy / QR records.
+ * Resolves session-wise attendance (Entry / Exit / Overall).
+ * Maps legacy/database morning/afternoon records seamlessly to Entry and Exit.
  */
 export function resolveSessionAttendance(att?: {
   status?: string | null;
   morning_status?: string | null;
   afternoon_status?: string | null;
+  entry_status?: string | null;
+  exit_status?: string | null;
+  checked_in_at?: string | null;
+  updated_at?: string | null;
+  remarks?: string | null;
   method?: string | null;
 } | null): SessionAttendanceInfo {
   if (!att || !att.status) {
-    return { morning: false, afternoon: false, overall: "absent" };
+    return {
+      entry: false,
+      exit: false,
+      morning: false,
+      afternoon: false,
+      overall: "absent",
+      detailedStatus: "Absent",
+    };
   }
+
+  const entryTime = att.checked_in_at ?? null;
 
   if (att.status === "pending") {
-    return { morning: false, afternoon: false, overall: "pending" };
+    return {
+      entry: false,
+      exit: false,
+      morning: false,
+      afternoon: false,
+      overall: "pending",
+      detailedStatus: "Pending",
+    };
   }
   if (att.status === "excused") {
-    return { morning: false, afternoon: false, overall: "excused" };
+    return {
+      entry: false,
+      exit: false,
+      morning: false,
+      afternoon: false,
+      overall: "excused",
+      detailedStatus: "Excused",
+    };
   }
   if (att.status !== "present") {
-    return { morning: false, afternoon: false, overall: "absent" };
+    return {
+      entry: false,
+      exit: false,
+      morning: false,
+      afternoon: false,
+      overall: "absent",
+      detailedStatus: "Absent",
+    };
   }
 
-  // Check explicit morning / afternoon flags
-  const hasMorning = att.morning_status === "present";
-  const hasAfternoon = att.afternoon_status === "present";
+  // Check explicit entry / exit (or morning / afternoon) flags
+  const hasEntry = (att.entry_status ?? att.morning_status) === "present";
+  const hasExit = (att.exit_status ?? att.afternoon_status) === "present";
+  const exitTime = extractExitTimestamp(att.remarks, att.updated_at, hasExit);
 
-  // If neither flag was explicitly configured, but record status is present (legacy or standard check-in):
-  if (att.morning_status == null && att.afternoon_status == null) {
-    return { morning: true, afternoon: true, overall: "present" };
+  // If neither flag was explicitly configured, but record status is present (legacy single check-in):
+  if (
+    att.morning_status == null &&
+    att.afternoon_status == null &&
+    att.entry_status == null &&
+    att.exit_status == null
+  ) {
+    return {
+      entry: true,
+      exit: true,
+      morning: true,
+      afternoon: true,
+      entryTime,
+      exitTime: exitTime ?? entryTime,
+      overall: "present",
+      detailedStatus: "Complete",
+    };
   }
 
-  if (hasMorning && hasAfternoon) {
-    return { morning: true, afternoon: true, overall: "present" };
+  if (hasEntry && hasExit) {
+    return {
+      entry: true,
+      exit: true,
+      morning: true,
+      afternoon: true,
+      entryTime,
+      exitTime,
+      overall: "present",
+      detailedStatus: "Complete",
+    };
   }
-  if (hasMorning || hasAfternoon) {
-    return { morning: hasMorning, afternoon: hasAfternoon, overall: "incomplete" };
+  if (hasEntry && !hasExit) {
+    return {
+      entry: true,
+      exit: false,
+      morning: true,
+      afternoon: false,
+      entryTime,
+      exitTime: null,
+      overall: "incomplete",
+      detailedStatus: "Entry Only",
+    };
+  }
+  if (!hasEntry && hasExit) {
+    return {
+      entry: false,
+      exit: true,
+      morning: false,
+      afternoon: true,
+      entryTime: null,
+      exitTime,
+      overall: "incomplete",
+      detailedStatus: "Exit Only",
+    };
   }
 
-  return { morning: false, afternoon: false, overall: "absent" };
+  return {
+    entry: false,
+    exit: false,
+    morning: false,
+    afternoon: false,
+    overall: "absent",
+    detailedStatus: "Absent",
+  };
 }
 
 export interface Summary {

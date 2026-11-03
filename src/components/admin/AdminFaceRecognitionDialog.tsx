@@ -65,6 +65,8 @@ export function AdminFaceRecognitionDialog({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("user");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [sessionType, setSessionType] = useState<"entry" | "exit">("entry");
   const [faceResult, setFaceResult] = useState<AdminFaceVerificationResult | null>(null);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,25 +82,29 @@ export function AdminFaceRecognitionDialog({
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Stop camera stream cleanly
+  // Stop camera stream cleanly and release all hardware resources
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
       streamRef.current = null;
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setCameraLoading(false);
+    setIsCameraActive(false);
   }, []);
 
-  // Start face camera directly
+  // Start face camera directly when user explicitly clicks "Start Verification"
   const startCamera = useCallback(
     async (mode = facingMode) => {
       stopCamera();
       setCameraError(null);
       setCameraLoading(true);
       setFaceResult(null);
+      setIsCameraActive(true);
 
       if (!navigator.mediaDevices?.getUserMedia) {
         setCameraError("Camera access is not supported by your browser.");
@@ -210,12 +216,16 @@ export function AdminFaceRecognitionDialog({
         data: {
           imageBase64,
           participantId: selectedParticipantId || undefined,
+          sessionType,
         },
       });
 
       setFaceResult(res);
 
       if (res.ok) {
+        // Stop camera upon successful verification to release hardware resources cleanly
+        stopCamera();
+
         if (typeof navigator !== "undefined" && "vibrate" in navigator) {
           try {
             navigator.vibrate([100, 50, 100]);
@@ -224,7 +234,7 @@ export function AdminFaceRecognitionDialog({
           }
         }
         if (res.resultCode === "VERIFIED_PRESENT") {
-          toast.success("Attendance Marked Successfully — Face Verified!");
+          toast.success(res.message || "Attendance Marked Successfully — Face Verified!");
           onAttendanceConfirmed?.();
         } else if (res.resultCode === "ALREADY_MARKED") {
           toast.info(res.message);
@@ -249,24 +259,24 @@ export function AdminFaceRecognitionDialog({
     }
   };
 
-  // Reset result and restart camera for next attendee
+  // Reset result and prompt to start verification for next attendee
   const handleResetFace = () => {
     setFaceResult(null);
-    void startCamera();
+    setIsCameraActive(false);
+    stopCamera();
   };
 
-  // Manage camera lifecycle when dialog opens or closes
+  // Manage camera lifecycle: NEVER auto-start camera on page/modal load
   useEffect(() => {
-    if (open) {
-      setFaceResult(null);
-      void startCamera(facingMode);
-    } else {
+    if (!open) {
       stopCamera();
+      setFaceResult(null);
+      setIsCameraActive(false);
     }
     return () => {
       stopCamera();
     };
-  }, [open, facingMode, startCamera, stopCamera]);
+  }, [open, stopCamera]);
 
   // Real-time live face detection & alignment tracking loop
   useEffect(() => {
@@ -276,7 +286,7 @@ export function AdminFaceRecognitionDialog({
 
     const detectLoop = async (now: number) => {
       if (isCancelled) return;
-      if (videoRef.current && streamRef.current && !isVerifying && !faceResult && !cameraLoading && !cameraError) {
+      if (videoRef.current && streamRef.current && isCameraActive && !isVerifying && !faceResult && !cameraLoading && !cameraError) {
         if (now - lastScanTime > 150) {
           lastScanTime = now;
           const res = await detectFaceInVideo(videoRef.current, canvasRef.current ?? undefined);
@@ -288,7 +298,7 @@ export function AdminFaceRecognitionDialog({
       animId = requestAnimationFrame(detectLoop);
     };
 
-    if (open && !cameraError && !cameraLoading && !faceResult) {
+    if (open && isCameraActive && !cameraError && !cameraLoading && !faceResult) {
       animId = requestAnimationFrame(detectLoop);
     }
 
@@ -296,7 +306,7 @@ export function AdminFaceRecognitionDialog({
       isCancelled = true;
       if (animId) cancelAnimationFrame(animId);
     };
-  }, [open, cameraError, cameraLoading, isVerifying, faceResult]);
+  }, [open, isCameraActive, cameraError, cameraLoading, isVerifying, faceResult]);
 
   // Filter approved participants for 1-to-1 dropdown
   const filteredParticipants = approvedParticipants.filter((p) => {
@@ -382,19 +392,17 @@ export function AdminFaceRecognitionDialog({
                   <span className="leading-snug">{faceResult.message}</span>
                 </div>
 
-                {faceResult.confidence !== undefined && (
-                  <Badge
-                    className={`font-mono text-xs shrink-0 ${
-                      faceResult.ok && faceResult.resultCode === "VERIFIED_PRESENT"
-                        ? "bg-emerald-600 text-white"
-                        : faceResult.resultCode === "ALREADY_MARKED"
-                        ? "bg-amber-600 text-white"
-                        : "bg-destructive text-white"
-                    }`}
-                  >
-                    Match: {faceResult.confidence}%
-                  </Badge>
-                )}
+                <Badge
+                  className={`font-semibold text-xs shrink-0 ${
+                    faceResult.ok && faceResult.resultCode === "VERIFIED_PRESENT"
+                      ? "bg-emerald-600 text-white"
+                      : faceResult.resultCode === "ALREADY_MARKED"
+                      ? "bg-amber-600 text-white"
+                      : "bg-destructive text-white"
+                  }`}
+                >
+                  {faceResult.ok ? "Verified" : "Unverified"}
+                </Badge>
               </div>
 
               <CardContent className="p-4 sm:p-6 space-y-4">
@@ -443,8 +451,8 @@ export function AdminFaceRecognitionDialog({
                             <p className="font-bold text-foreground">{cand.fullName}</p>
                             <p className="font-mono text-muted-foreground">{cand.participantCode}</p>
                           </div>
-                          <Badge variant="outline" className="font-mono">
-                            {cand.score}% Match
+                          <Badge variant="outline" className="font-medium text-xs">
+                            Potential Match
                           </Badge>
                         </div>
                       ))}
@@ -454,10 +462,10 @@ export function AdminFaceRecognitionDialog({
                   <div className="py-6 text-center space-y-2">
                     <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto" />
                     <p className="text-sm font-semibold text-foreground">
-                      Face could not be recognized with sufficient confidence.
+                      Face identity could not be verified automatically.
                     </p>
                     <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                      Ensure the attendee faces the camera squarely with adequate lighting.
+                      Ensure the attendee faces the camera squarely with adequate lighting, or use manual override.
                     </p>
                   </div>
                 )}
@@ -472,109 +480,60 @@ export function AdminFaceRecognitionDialog({
                 </div>
               </CardContent>
             </Card>
-          ) : (
+          ) : !isCameraActive ? (
             /* ========================================================================= */
-            /* STATE 3: DIRECT LIVE CAMERA FACE SCANNER */
+            /* STATE 3A: PRE-FLIGHT / START VERIFICATION PROMPT (CAMERA INACTIVE) */
             /* ========================================================================= */
-            <div className="space-y-3">
-              {/* Live Video Feed with Oval Reticle */}
-              <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-purple-500/40 shadow-lg flex items-center justify-center min-h-[340px] sm:min-h-[420px]">
-                {cameraLoading && (
-                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/85 text-white">
-                    <RefreshCw className="h-8 w-8 animate-spin text-purple-400" />
-                    <span className="text-sm font-medium">Opening camera video feed…</span>
-                  </div>
-                )}
+            <div className="space-y-4">
+              <div className="p-6 rounded-2xl border-2 border-dashed border-purple-500/30 bg-purple-500/5 text-center space-y-4">
+                <div className="h-16 w-16 mx-auto rounded-full bg-purple-100 dark:bg-purple-950/50 flex items-center justify-center text-purple-600">
+                  <Camera className="h-8 w-8" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-bold text-foreground">Ready for Face Verification</h3>
+                  <p className="text-xs text-muted-foreground max-w-md mx-auto mt-1">
+                    Camera access will only start when you click below. Select the attendance session and click Start Verification.
+                  </p>
+                </div>
 
-                {cameraError ? (
-                  <div className="p-6 text-center text-white space-y-3 max-w-sm z-10">
-                    <AlertTriangle className="h-10 w-10 text-amber-400 mx-auto" />
-                    <p className="text-sm font-semibold">{cameraError}</p>
-                    <Button
-                      size="sm"
-                      onClick={() => void startCamera()}
-                      className="gap-1.5 font-bold bg-purple-700 text-white"
+                {/* Session Type Selector: Entry vs Exit */}
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  <div className="inline-flex p-1 bg-muted rounded-xl border">
+                    <button
+                      type="button"
+                      onClick={() => setSessionType("entry")}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        sessionType === "entry"
+                          ? "bg-purple-700 text-white shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
                     >
-                      <RotateCcw className="h-3.5 w-3.5" /> Retry Camera
-                    </Button>
+                      Entry Attendance (Check-in)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSessionType("exit")}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        sessionType === "exit"
+                          ? "bg-purple-700 text-white shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Exit Attendance (Check-out)
+                    </button>
                   </div>
-                ) : (
-                  <>
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full max-h-[440px] object-cover"
-                    />
+                </div>
 
-                    {/* Face Oval Reticle Overlay with Dynamic Detection Feedback */}
-                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
-                      <div
-                        className={`relative w-52 h-68 sm:w-60 sm:h-76 rounded-[50%] border-2 transition-all duration-300 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center max-w-[80vw] ${
-                          detectionState.detected
-                            ? "border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]"
-                            : "border-purple-400/80"
-                        }`}
-                      >
-                        <div className={`w-8 h-0.5 absolute left-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
-                        <div className={`w-8 h-0.5 absolute right-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
-                        <div className={`h-6 w-0.5 absolute top-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
-                        <div className={`h-6 w-0.5 absolute bottom-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
-                      </div>
-                    </div>
-
-                    {/* Top Right Controls: Flip Camera */}
-                    <div className="absolute top-3 right-3 z-10">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={toggleFacingMode}
-                        className="bg-black/60 hover:bg-black/80 text-white border border-white/20 text-xs gap-1.5 backdrop-blur-xs h-8 px-2.5 cursor-pointer"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        <span>Flip Camera</span>
-                      </Button>
-                    </div>
-
-                    {/* Top Prompt Pill: Real-time Live Detection & Alignment HUD */}
-                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 w-[92%] sm:w-auto text-center pointer-events-none">
-                      <Badge
-                        className={`text-white backdrop-blur-sm border text-xs px-3.5 py-1.5 font-medium transition-colors shadow-sm ${
-                          detectionState.detected
-                            ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-200"
-                            : "bg-black/75 border-white/20"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 justify-center">
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              detectionState.detected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
-                            }`}
-                          />
-                          <span>
-                            {detectionState.detected
-                              ? `Face Detected: ${detectionState.score}% • ${detectionState.message}`
-                              : detectionState.message}
-                          </span>
-                        </div>
-                      </Badge>
-                    </div>
-
-                    {/* Centered Bottom Capture & Verify Trigger */}
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-                      <Button
-                        size="lg"
-                        onClick={handleCaptureAndVerify}
-                        disabled={isVerifying}
-                        className="gap-2.5 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-2xl px-7 py-5 rounded-full text-sm sm:text-base transition-all duration-200 active:scale-95 border border-white/25 cursor-pointer"
-                      >
-                        <ScanFace className="h-5 w-5" />
-                        <span>Capture & Verify Face</span>
-                      </Button>
-                    </div>
-                  </>
-                )}
+                <div className="pt-2">
+                  <Button
+                    size="lg"
+                    onClick={() => void startCamera()}
+                    className="gap-2.5 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-xl px-8 py-5 rounded-full text-base transition-all duration-200 active:scale-95 cursor-pointer"
+                  >
+                    <ScanFace className="h-5 w-5" />
+                    <span>Start Verification</span>
+                  </Button>
+                </div>
               </div>
 
               {/* Matching Scope & Targeted Selection */}
@@ -634,6 +593,130 @@ export function AdminFaceRecognitionDialog({
                       ))}
                     </select>
                   </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* ========================================================================= */
+            /* STATE 3B: ACTIVE CAMERA FACE SCANNER */
+            /* ========================================================================= */
+            <div className="space-y-3">
+              {/* Active session banner */}
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs font-medium text-purple-900 dark:text-purple-200">
+                <span>Active Target: <strong>{sessionType === "entry" ? "Entry Attendance" : "Exit Attendance"}</strong></span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={stopCamera}
+                  className="h-6 text-xs text-destructive hover:bg-destructive/10 px-2"
+                >
+                  Cancel / Stop Camera
+                </Button>
+              </div>
+
+              {/* Live Video Feed with Oval Reticle */}
+              <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-purple-500/40 shadow-lg flex items-center justify-center min-h-[340px] sm:min-h-[420px]">
+                {cameraLoading && (
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/85 text-white">
+                    <RefreshCw className="h-8 w-8 animate-spin text-purple-400" />
+                    <span className="text-sm font-medium">Opening camera video feed…</span>
+                  </div>
+                )}
+
+                {cameraError ? (
+                  <div className="p-6 text-center text-white space-y-3 max-w-sm z-10">
+                    <AlertTriangle className="h-10 w-10 text-amber-400 mx-auto" />
+                    <p className="text-sm font-semibold">{cameraError}</p>
+                    <Button
+                      size="sm"
+                      onClick={() => void startCamera()}
+                      className="gap-1.5 font-bold bg-purple-700 text-white"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Retry Camera
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full max-h-[440px] object-cover"
+                    />
+
+                    {/* Face Oval Reticle Overlay with Dynamic Detection Feedback */}
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+                      <div
+                        className={`relative w-52 h-68 sm:w-60 sm:h-76 rounded-[50%] border-2 transition-all duration-300 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex items-center justify-center max-w-[80vw] ${
+                          detectionState.detected
+                            ? "border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]"
+                            : "border-purple-400/80"
+                        }`}
+                      >
+                        <div className={`w-8 h-0.5 absolute left-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
+                        <div className={`w-8 h-0.5 absolute right-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
+                        <div className={`h-6 w-0.5 absolute top-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
+                        <div className={`h-6 w-0.5 absolute bottom-2 transition-colors ${detectionState.detected ? "bg-emerald-400" : "bg-purple-400/70"}`} />
+                      </div>
+                    </div>
+
+                    {/* Top Right Controls: Flip Camera & Stop Camera */}
+                    <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={toggleFacingMode}
+                        className="bg-black/60 hover:bg-black/80 text-white border border-white/20 text-xs gap-1.5 backdrop-blur-xs h-8 px-2.5 cursor-pointer"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        <span>Flip</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={stopCamera}
+                        className="text-xs h-8 px-2.5 cursor-pointer"
+                      >
+                        Stop
+                      </Button>
+                    </div>
+
+                    {/* Top Prompt Pill: Real-time Live Detection HUD without percentages */}
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 w-[92%] sm:w-auto text-center pointer-events-none">
+                      <Badge
+                        className={`text-white backdrop-blur-sm border text-xs px-3.5 py-1.5 font-medium transition-colors shadow-sm ${
+                          detectionState.detected
+                            ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-200"
+                            : "bg-black/75 border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              detectionState.detected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                            }`}
+                          />
+                          <span>
+                            {detectionState.detected ? "Face Detected • Aligned" : detectionState.message}
+                          </span>
+                        </div>
+                      </Badge>
+                    </div>
+
+                    {/* Centered Bottom Capture & Verify Trigger */}
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+                      <Button
+                        size="lg"
+                        onClick={handleCaptureAndVerify}
+                        disabled={isVerifying}
+                        className="gap-2.5 font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white shadow-2xl px-7 py-5 rounded-full text-sm sm:text-base transition-all duration-200 active:scale-95 border border-white/25 cursor-pointer"
+                      >
+                        <ScanFace className="h-5 w-5" />
+                        <span>Capture & Verify Face</span>
+                      </Button>
+                    </div>
+                  </>
                 )}
               </div>
             </div>

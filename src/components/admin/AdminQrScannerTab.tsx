@@ -1295,7 +1295,7 @@ export function AdminQrScannerTab({
                         />
                         <span>
                           {faceDetectionState.detected
-                            ? `Face Detected: ${faceDetectionState.score}% • ${faceDetectionState.message}`
+                            ? "Face Detected • Aligned"
                             : faceDetectionState.message}
                         </span>
                       </div>
@@ -1375,19 +1375,17 @@ export function AdminQrScannerTab({
                   <span className="leading-snug">{faceResult.message}</span>
                 </div>
 
-                {faceResult.confidence !== undefined && (
-                  <Badge
-                    className={`font-mono text-xs shrink-0 ${
-                      faceResult.ok && faceResult.resultCode === "VERIFIED_PRESENT"
-                        ? "bg-emerald-600 text-white"
-                        : faceResult.resultCode === "ALREADY_MARKED"
-                        ? "bg-slate-600 text-white"
-                        : "bg-destructive text-white"
-                    }`}
-                  >
-                    Match Confidence: {faceResult.confidence}%
-                  </Badge>
-                )}
+                <Badge
+                  className={`font-semibold text-xs shrink-0 ${
+                    faceResult.ok && faceResult.resultCode === "VERIFIED_PRESENT"
+                      ? "bg-emerald-600 text-white"
+                      : faceResult.resultCode === "ALREADY_MARKED"
+                      ? "bg-slate-600 text-white"
+                      : "bg-destructive text-white"
+                  }`}
+                >
+                  {faceResult.ok ? "Verified" : "Unverified"}
+                </Badge>
               </div>
 
               <CardContent className="p-4 sm:p-6 space-y-6">
@@ -1503,8 +1501,8 @@ export function AdminQrScannerTab({
                             <p className="font-bold text-sm text-foreground">{cand.fullName}</p>
                             <p className="text-xs font-mono text-muted-foreground">{cand.participantCode}</p>
                           </div>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {cand.score}% Match
+                          <Badge variant="outline" className="text-xs font-medium">
+                            Potential Match
                           </Badge>
                         </div>
                       ))}

@@ -7,10 +7,12 @@ import {
   useAdminData,
   signedUrls,
 } from "@/lib/use-me";
-import { todayLocal, workshopDays } from "@/lib/attendance";
+import { todayLocal, workshopDays, formatIstTimestamp, formatIstDate, extractExitTimestamp } from "@/lib/attendance";
 import {
   generate30DayWorkbook,
   generateDailyReportWorkbook,
+  generateDailyAttendanceExcel,
+  generateDateRangeAttendanceExcel,
   downloadExcelFile,
   type ParticipantRow,
 } from "@/lib/excel";
@@ -63,6 +65,10 @@ import {
   IdCard,
   CalendarCheck,
   FileDown,
+  Maximize2,
+  Copy,
+  Download,
+  FileText,
 } from "lucide-react";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { AdminAttendanceManagementTab } from "@/components/admin/AdminAttendanceManagementTab";
@@ -140,8 +146,20 @@ function AdminPage() {
 
   // QR Display State
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrDestinationUrl, setQrDestinationUrl] = useState<string>("");
+  const [fullscreenQrOpen, setFullscreenQrOpen] = useState(false);
   const [timeLeftSec, setTimeLeftSec] = useState<number>(0);
   const [generatingQr, setGeneratingQr] = useState(false);
+
+  // Attendance Reports & Exports State
+  const [reportSingleDate, setReportSingleDate] = useState(todayLocal());
+  const [reportStartDate, setReportStartDate] = useState(todayLocal());
+  const [reportEndDate, setReportEndDate] = useState(todayLocal());
+  const [reportSearch, setReportSearch] = useState("");
+  const [reportDateScope, setReportDateScope] = useState<"today" | "specific" | "range" | "all">("today");
+  const [reportEntryFilter, setReportEntryFilter] = useState<"all" | "present" | "missing">("all");
+  const [reportExitFilter, setReportExitFilter] = useState<"all" | "present" | "missing">("all");
+  const [reportMethodFilter, setReportMethodFilter] = useState<"all" | "face" | "qr" | "manual">("all");
 
   // Participant Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -286,12 +304,16 @@ function AdminPage() {
     }
   }, [photoPathsKey]);
 
-  // Handle QR code generation for visual display
+  // Handle QR code generation for visual display (encodes full destination URL for standard camera scanning)
   useEffect(() => {
     const active = adminData?.activeQr;
     if (active) {
-      void QRCode.toDataURL(active.token, {
-        width: 380,
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const destinationUrl = `${origin}/dashboard?token=${encodeURIComponent(active.token)}&code=${encodeURIComponent(active.short_code)}`;
+      setQrDestinationUrl(destinationUrl);
+
+      void QRCode.toDataURL(destinationUrl, {
+        width: 420,
         margin: 2,
         color: { dark: "#0f172a", light: "#ffffff" },
       }).then(setQrDataUrl);
@@ -309,6 +331,7 @@ function AdminPage() {
       return () => clearInterval(interval);
     } else {
       setQrDataUrl(null);
+      setQrDestinationUrl("");
       setTimeLeftSec(0);
     }
   }, [adminData?.activeQr]);
@@ -322,6 +345,11 @@ function AdminPage() {
   const totalRegistered = adminData?.profiles.length ?? 0;
   const verifiedCount = adminData?.profiles.filter((p) => p.verification_status === "verified").length ?? 0;
   const todayAttendance = adminData?.attendance.filter((a) => a.day_date === today) ?? [];
+  const todayEntryCount = todayAttendance.filter((a) => a.morning_status === "present" || (a.status === "present" && !a.morning_status)).length;
+  const todayExitCount = todayAttendance.filter((a) => a.afternoon_status === "present").length;
+  const todayCompleteCount = todayAttendance.filter((a) => (a.morning_status === "present" || a.status === "present") && a.afternoon_status === "present").length;
+  const missingEntryCount = Math.max(0, totalRegistered - todayEntryCount);
+  const missingExitCount = Math.max(0, totalRegistered - todayExitCount);
   const presentToday = todayAttendance.filter((a) => a.status === "present").length;
   const absentToday = totalRegistered - todayAttendance.length;
   const attendanceRateToday = totalRegistered ? Math.round((presentToday / totalRegistered) * 100) : 0;
@@ -473,6 +501,88 @@ function AdminPage() {
     };
   }, [adminData, dailyDate, dailySearch, dailyStatusFilter]);
 
+  // Attendance Reports Filtered Data for Interactive Reports Tab
+  const reportAttendanceRecords = useMemo(() => {
+    if (!adminData) return [];
+    const profilesMap = new Map(adminData.profiles.map((p) => [p.id, p]));
+
+    return adminData.attendance
+      .filter((a) => {
+        // Date scope filter
+        if (reportDateScope === "today" && a.day_date !== today) return false;
+        if (reportDateScope === "specific" && a.day_date !== reportSingleDate) return false;
+        if (reportDateScope === "range" && (a.day_date < reportStartDate || a.day_date > reportEndDate)) return false;
+
+        const profile = profilesMap.get(a.user_id);
+        const name = profile?.full_name?.toLowerCase() ?? "";
+        const code = profile?.participant_code?.toLowerCase() ?? "";
+
+        // Text search filter
+        if (reportSearch.trim()) {
+          const q = reportSearch.trim().toLowerCase();
+          if (!name.includes(q) && !code.includes(q)) return false;
+        }
+
+        const isEntryPresent = a.morning_status === "present" || (a.status === "present" && !a.morning_status);
+        const isExitPresent = a.afternoon_status === "present";
+
+        // Entry status filter
+        if (reportEntryFilter === "present" && !isEntryPresent) return false;
+        if (reportEntryFilter === "missing" && isEntryPresent) return false;
+
+        // Exit status filter
+        if (reportExitFilter === "present" && !isExitPresent) return false;
+        if (reportExitFilter === "missing" && isExitPresent) return false;
+
+        // Method filter
+        if (reportMethodFilter === "face" && a.method !== "qr_selfie" && a.method !== "face") return false;
+        if (reportMethodFilter === "qr" && a.method !== "qr" && a.method !== "qr_scan") return false;
+        if (reportMethodFilter === "manual" && a.method !== "manual") return false;
+
+        return true;
+      })
+      .map((a) => {
+        const profile = profilesMap.get(a.user_id);
+        const isEntry = a.morning_status === "present" || (a.status === "present" && !a.morning_status);
+        const isExit = a.afternoon_status === "present";
+        const entryTime = a.checked_in_at ? formatIstTimestamp(a.checked_in_at) : "—";
+        const exitTime = extractExitTimestamp(a) || "—";
+        const overall = isEntry && isExit ? "Complete" : isEntry ? "Entry Only" : isExit ? "Exit Only" : "Absent";
+
+        return {
+          id: a.id,
+          date: a.day_date,
+          userId: a.user_id,
+          participantCode: profile?.participant_code || "—",
+          fullName: profile?.full_name || "Unknown",
+          isEntry,
+          entryTime,
+          isExit,
+          exitTime,
+          method:
+            a.method === "qr_selfie" || a.method === "face"
+              ? "Face Verified"
+              : a.method === "qr" || a.method === "qr_scan"
+              ? "QR Scan"
+              : a.method === "manual"
+              ? "Manual Override"
+              : a.method || "—",
+          overall,
+        };
+      });
+  }, [
+    adminData,
+    today,
+    reportDateScope,
+    reportSingleDate,
+    reportStartDate,
+    reportEndDate,
+    reportSearch,
+    reportEntryFilter,
+    reportExitFilter,
+    reportMethodFilter,
+  ]);
+
   // Loading & Access Checks (placed strictly AFTER all hooks to adhere to React Rules of Hooks)
   if (meLoading || dataLoading) {
     return (
@@ -522,6 +632,33 @@ function AdminPage() {
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to revoke QR.");
     }
+  };
+
+  const handleCopyQrUrl = async () => {
+    if (!qrDestinationUrl) {
+      toast.error("No active QR code destination URL to copy.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(qrDestinationUrl);
+      toast.success("Projector QR destination URL copied to clipboard!");
+    } catch {
+      toast.error("Failed to copy URL to clipboard.");
+    }
+  };
+
+  const handleDownloadQrPng = () => {
+    if (!qrDataUrl) {
+      toast.error("No active QR image to download.");
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = qrDataUrl;
+    a.download = `ESDP_Projector_QR_${today}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast.success("Projector QR image downloaded.");
   };
 
   const handleManualSubmit = async () => {
@@ -644,6 +781,150 @@ function AdminPage() {
       toast.success(`Daily report for ${today} downloaded.`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to export daily report.");
+    }
+  };
+
+  const handleDownloadSingleDayAttendanceExcel = async (targetDate: string = reportSingleDate) => {
+    try {
+      const dayRecords = (adminData?.attendance ?? []).filter((a) => a.day_date === targetDate);
+      const participants = (adminData?.profiles ?? []).map((p) => ({
+        id: p.id,
+        participant_code: p.participant_code,
+        full_name: p.full_name,
+        phone: p.phone,
+        email: p.email,
+      }));
+
+      const bytes = await generateDailyAttendanceExcel({
+        date: targetDate,
+        participants,
+        attendanceRecords: dayRecords,
+        settings,
+      });
+
+      downloadExcelFile(bytes, `ESDP_Attendance_${targetDate}.xlsx`);
+      toast.success(`Exported ESDP_Attendance_${targetDate}.xlsx`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to export daily attendance Excel.");
+    }
+  };
+
+  const handleDownloadDateRangeAttendanceExcel = async () => {
+    try {
+      const records = (adminData?.attendance ?? []).filter(
+        (a) => a.day_date >= reportStartDate && a.day_date <= reportEndDate,
+      );
+      const participants = (adminData?.profiles ?? []).map((p) => ({
+        id: p.id,
+        participant_code: p.participant_code,
+        full_name: p.full_name,
+        phone: p.phone,
+        email: p.email,
+      }));
+
+      const bytes = await generateDateRangeAttendanceExcel({
+        startDate: reportStartDate,
+        endDate: reportEndDate,
+        participants,
+        attendanceRecords: records,
+        settings,
+        sessionType: "all",
+      });
+
+      downloadExcelFile(bytes, `ESDP_Attendance_${reportStartDate}_to_${reportEndDate}.xlsx`);
+      toast.success(`Exported ESDP_Attendance_${reportStartDate}_to_${reportEndDate}.xlsx`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to export date range Excel.");
+    }
+  };
+
+  const handleDownloadCompleteHistoryExcel = async () => {
+    try {
+      const allWorkshopDays = settings ? workshopDays(settings) : [];
+      const startDate = allWorkshopDays[0] || "2026-11-01";
+      const endDate = allWorkshopDays[allWorkshopDays.length - 1] || today;
+      const records = adminData?.attendance ?? [];
+      const participants = (adminData?.profiles ?? []).map((p) => ({
+        id: p.id,
+        participant_code: p.participant_code,
+        full_name: p.full_name,
+        phone: p.phone,
+        email: p.email,
+      }));
+
+      const bytes = await generateDateRangeAttendanceExcel({
+        startDate,
+        endDate,
+        participants,
+        attendanceRecords: records,
+        settings,
+        sessionType: "all",
+      });
+
+      downloadExcelFile(bytes, "ESDP_Complete_Attendance_Report.xlsx");
+      toast.success("Exported ESDP_Complete_Attendance_Report.xlsx");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to export complete attendance report.");
+    }
+  };
+
+  const handleDownloadEntryAttendanceExcel = async () => {
+    try {
+      const allWorkshopDays = settings ? workshopDays(settings) : [];
+      const startDate = allWorkshopDays[0] || "2026-11-01";
+      const endDate = allWorkshopDays[allWorkshopDays.length - 1] || today;
+      const records = adminData?.attendance ?? [];
+      const participants = (adminData?.profiles ?? []).map((p) => ({
+        id: p.id,
+        participant_code: p.participant_code,
+        full_name: p.full_name,
+        phone: p.phone,
+        email: p.email,
+      }));
+
+      const bytes = await generateDateRangeAttendanceExcel({
+        startDate,
+        endDate,
+        participants,
+        attendanceRecords: records,
+        settings,
+        sessionType: "entry",
+      });
+
+      downloadExcelFile(bytes, "ESDP_Entry_Attendance.xlsx");
+      toast.success("Exported ESDP_Entry_Attendance.xlsx");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to export entry attendance.");
+    }
+  };
+
+  const handleDownloadExitAttendanceExcel = async () => {
+    try {
+      const allWorkshopDays = settings ? workshopDays(settings) : [];
+      const startDate = allWorkshopDays[0] || "2026-11-01";
+      const endDate = allWorkshopDays[allWorkshopDays.length - 1] || today;
+      const records = adminData?.attendance ?? [];
+      const participants = (adminData?.profiles ?? []).map((p) => ({
+        id: p.id,
+        participant_code: p.participant_code,
+        full_name: p.full_name,
+        phone: p.phone,
+        email: p.email,
+      }));
+
+      const bytes = await generateDateRangeAttendanceExcel({
+        startDate,
+        endDate,
+        participants,
+        attendanceRecords: records,
+        settings,
+        sessionType: "exit",
+      });
+
+      downloadExcelFile(bytes, "ESDP_Exit_Attendance.xlsx");
+      toast.success("Exported ESDP_Exit_Attendance.xlsx");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to export exit attendance.");
     }
   };
 
@@ -836,101 +1117,94 @@ function AdminPage() {
 
         {/* TAB 2: OVERVIEW & ANALYTICS */}
         <TabsContent value="overview" className="space-y-6">
-          {/* 8 KPI Cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Registered</CardTitle>
+          {/* Quick Navigation Action Bar */}
+          <Card className="shadow-sm border bg-card">
+            <CardContent className="p-3.5 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <TrendingUp className="h-4 w-4 text-primary" /> Quick Navigation
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" className="text-xs gap-1.5 h-8 font-semibold cursor-pointer" onClick={() => setActiveTab("daily")}>
+                  <Calendar className="h-3.5 w-3.5 text-primary" /> Daily Attendance
+                </Button>
+                <Button size="sm" variant="outline" className="text-xs gap-1.5 h-8 font-semibold cursor-pointer" onClick={() => setActiveTab("attendance_management")}>
+                  <CalendarCheck className="h-3.5 w-3.5 text-emerald-600" /> Attendance Calendar
+                </Button>
+                <Button size="sm" variant="outline" className="text-xs gap-1.5 h-8 font-semibold cursor-pointer" onClick={() => setActiveTab("exports")}>
+                  <FileText className="h-3.5 w-3.5 text-purple-600" /> Attendance Reports
+                </Button>
+                <Button size="sm" variant="outline" className="text-xs gap-1.5 h-8 font-semibold cursor-pointer" onClick={() => setActiveTab("exports")}>
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" /> Excel Export
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Today's Entry & Exit Attendance KPI Grid */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+            <Card className="shadow-sm border">
+              <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
+                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Total Registered</CardTitle>
                 <Users className="h-4 w-4 text-primary" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold font-display">{totalRegistered}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">{verifiedCount} Identity Verified</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{verifiedCount} Identity Verified</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Present Today</CardTitle>
-                <CheckCircle2 className="h-4 w-4 text-success" />
+            <Card className="shadow-sm border bg-amber-500/5 border-amber-500/20">
+              <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
+                <CardTitle className="text-xs font-semibold uppercase text-amber-800 dark:text-amber-400">Today's Entry</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-amber-600" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold font-display text-success">{presentToday}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">{absentToday} Absent so far</p>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold font-display text-amber-700 dark:text-amber-300">{todayEntryCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Recorded arrival</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Today's Rate</CardTitle>
-                <TrendingUp className="h-4 w-4 text-primary" />
+            <Card className="shadow-sm border bg-orange-500/5 border-orange-500/20">
+              <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
+                <CardTitle className="text-xs font-semibold uppercase text-orange-800 dark:text-orange-400">Today's Exit</CardTitle>
+                <Clock className="h-4 w-4 text-orange-600" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold font-display">{attendanceRateToday}%</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Of total registered</p>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold font-display text-orange-700 dark:text-orange-300">{todayExitCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Recorded departure</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Avg 30-Day Rate</CardTitle>
-                <Calendar className="h-4 w-4 text-primary" />
+            <Card className="shadow-sm border bg-rose-500/5 border-rose-500/20">
+              <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
+                <CardTitle className="text-xs font-semibold uppercase text-rose-800 dark:text-rose-400">Missing Entry</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-rose-600" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold font-display">{avgAttendance}%</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Across all workshop days</p>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold font-display text-rose-700 dark:text-rose-300">{missingEntryCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Awaiting check-in</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Pending Registration</CardTitle>
-                <Clock className="h-4 w-4 text-warning" />
+            <Card className="shadow-sm border bg-destructive/5 border-destructive/20">
+              <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
+                <CardTitle className="text-xs font-semibold uppercase text-destructive">Missing Exit</CardTitle>
+                <XCircle className="h-4 w-4 text-destructive" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold font-display text-warning">{pendingRegistrations}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Participants awaiting review</p>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold font-display text-destructive">{missingExitCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Awaiting check-out</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Pending Selfies</CardTitle>
-                <AlertTriangle className="h-4 w-4 text-warning" />
+            <Card className="shadow-sm border bg-emerald-500/5 border-emerald-500/20">
+              <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
+                <CardTitle className="text-xs font-semibold uppercase text-emerald-800 dark:text-emerald-400">Complete Attendance</CardTitle>
+                <TrendingUp className="h-4 w-4 text-emerald-600" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold font-display text-warning">{pendingSelfies}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Attendance selfies to verify</p>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">QR Status</CardTitle>
-                <QrCode className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-lg font-bold font-display flex items-center gap-1.5">
-                  {adminData?.activeQr ? (
-                    <span className="text-success flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-success animate-ping" /> Active ({timeLeftSec}s)
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">No Active Code</span>
-                  )}
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1">Today: {today}</p>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Audit Trail</CardTitle>
-                <History className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold font-display">{adminData?.auditLogs.length ?? 0}</div>
-                <p className="text-[11px] text-muted-foreground mt-1">Logged security events</p>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold font-display text-emerald-700 dark:text-emerald-300">{todayCompleteCount}</div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Both Entry & Exit present</p>
               </CardContent>
             </Card>
           </div>
@@ -1262,24 +1536,54 @@ function AdminPage() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-3 pt-4 w-full">
-                  <Button
-                    onClick={handleGenerateQr}
-                    disabled={generatingQr}
-                    className="flex-1 gap-2 font-bold"
-                  >
-                    <RotateCw className={`h-4 w-4 ${generatingQr ? "animate-spin" : ""}`} />
-                    {adminData?.activeQr ? "Regenerate / Rotate QR" : "Generate Today's QR Code"}
-                  </Button>
-                  {adminData?.activeQr && (
+                {/* Admin Controls Grid */}
+                <div className="flex flex-col gap-2.5 pt-4 w-full">
+                  <div className="flex flex-wrap items-center gap-2 w-full">
                     <Button
-                      variant="destructive"
-                      onClick={() => handleRevokeQr(adminData.activeQr!.id)}
-                      className="gap-2"
+                      onClick={handleGenerateQr}
+                      disabled={generatingQr}
+                      className="flex-1 min-w-[170px] gap-2 font-bold cursor-pointer"
                     >
-                      <XCircle className="h-4 w-4" /> Revoke
+                      <RotateCw className={`h-4 w-4 ${generatingQr ? "animate-spin" : ""}`} />
+                      {adminData?.activeQr ? "Refresh / Rotate QR" : "Generate Today's QR"}
                     </Button>
-                  )}
+
+                    {adminData?.activeQr && (
+                      <>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setFullscreenQrOpen(true)}
+                          className="gap-1.5 font-semibold text-xs cursor-pointer"
+                        >
+                          <Maximize2 className="h-3.5 w-3.5" /> Fullscreen Projector
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          onClick={handleCopyQrUrl}
+                          className="gap-1.5 font-semibold text-xs cursor-pointer"
+                        >
+                          <Copy className="h-3.5 w-3.5" /> Copy Destination URL
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          onClick={handleDownloadQrPng}
+                          className="gap-1.5 font-semibold text-xs cursor-pointer"
+                        >
+                          <Download className="h-3.5 w-3.5" /> Download PNG
+                        </Button>
+
+                        <Button
+                          variant="destructive"
+                          onClick={() => handleRevokeQr(adminData.activeQr!.id)}
+                          className="gap-1.5 text-xs font-semibold cursor-pointer"
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Revoke
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1771,57 +2075,338 @@ function AdminPage() {
           </Card>
         </TabsContent>
 
-        {/* TAB 5: EXCEL EXPORTS & AUDIT */}
+        {/* TAB 5: ATTENDANCE REPORTS & EXCEL EXPORTS */}
         <TabsContent value="exports" className="space-y-6">
+          {/* Top Section: Export Cards */}
           <div className="grid gap-6 md:grid-cols-3">
-            <Card className="shadow-sm">
+            {/* 1. Single-Day Attendance Excel Export */}
+            <Card className="shadow-sm border-2 border-primary/20 bg-card">
               <CardHeader>
                 <CardTitle className="font-display text-lg flex items-center gap-2">
-                  <FileSpreadsheet className="h-5 w-5 text-emerald-600" /> Full Master Attendance Sheet
+                  <Calendar className="h-5 w-5 text-primary" /> Single-Day Attendance Excel
                 </CardTitle>
                 <CardDescription>
-                  Full grid of all participants, Day 1 to Day 30 columns, total calculations, and summary statistics.
+                  Download complete attendance for all participants (including absentees) with exact IST timestamps.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold" onClick={handleExport30Day}>
-                  Download Master (.xlsx)
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase">Selected Date</label>
+                  <Input
+                    type="date"
+                    value={reportSingleDate}
+                    onChange={(e) => setReportSingleDate(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <Button
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold gap-2 cursor-pointer"
+                  onClick={() => handleDownloadSingleDayAttendanceExcel(reportSingleDate)}
+                >
+                  <FileSpreadsheet className="h-4 w-4" /> Download Daily Attendance Excel
                 </Button>
+                <p className="text-[11px] text-muted-foreground font-mono text-center">
+                  Filename: ESDP_Attendance_{reportSingleDate}.xlsx
+                </p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
+            {/* 2. Bulk Excel Attendance Downloads */}
+            <Card className="shadow-sm border-2 border-primary/20 bg-card">
               <CardHeader>
                 <CardTitle className="font-display text-lg flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-primary" /> Daily Attendance Report
+                  <Layers className="h-5 w-5 text-emerald-600" /> Bulk Excel Attendance
                 </CardTitle>
                 <CardDescription>
-                  Detailed attendance report for today ({today}), check-in timestamps, methods, and verified flags.
+                  Download records for custom date ranges, complete workshop history, or Entry/Exit separately.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full font-bold" onClick={handleExportDaily}>
-                  Download Today's Report (.xlsx)
-                </Button>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-muted-foreground uppercase">From</label>
+                    <Input
+                      type="date"
+                      value={reportStartDate}
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                      className="font-mono text-[11px] h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-muted-foreground uppercase">To</label>
+                    <Input
+                      type="date"
+                      value={reportEndDate}
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                      className="font-mono text-[11px] h-8"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs font-bold gap-1 cursor-pointer"
+                    onClick={handleDownloadDateRangeAttendanceExcel}
+                  >
+                    <FileDown className="h-3.5 w-3.5" /> Date Range (.xlsx)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs font-bold gap-1 cursor-pointer bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                    onClick={handleDownloadCompleteHistoryExcel}
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> Complete History
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs font-semibold gap-1 cursor-pointer"
+                    onClick={handleDownloadEntryAttendanceExcel}
+                  >
+                    <Sun className="h-3.5 w-3.5 text-amber-600" /> Entry Only
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs font-semibold gap-1 cursor-pointer"
+                    onClick={handleDownloadExitAttendanceExcel}
+                  >
+                    <Sunset className="h-3.5 w-3.5 text-orange-600" /> Exit Only
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
+            {/* 3. Full Master 30-Day Matrix & Filtered View */}
+            <Card className="shadow-sm border bg-card">
               <CardHeader>
                 <CardTitle className="font-display text-lg flex items-center gap-2">
-                  <FilterIcon className="h-5 w-5 text-primary" /> Filtered View Export
+                  <FileSpreadsheet className="h-5 w-5 text-purple-600" /> Master Matrix Sheets
                 </CardTitle>
                 <CardDescription>
-                  Exports only the {filteredParticipants.length} participants matching the current filters and search.
+                  Export the 30-day matrix table with full per-day columns, eligibility rates, and summary formulas.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full font-bold" onClick={handleExportFiltered}>
-                  Export Filtered View (.xlsx)
+              <CardContent className="space-y-2.5">
+                <Button
+                  className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold gap-2 cursor-pointer"
+                  onClick={handleExport30Day}
+                >
+                  <FileSpreadsheet className="h-4 w-4" /> Download 30-Day Master (.xlsx)
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full font-semibold text-xs gap-2 cursor-pointer"
+                  onClick={handleExportFiltered}
+                >
+                  <FilterIcon className="h-3.5 w-3.5" /> Export Filtered View ({filteredParticipants.length})
                 </Button>
               </CardContent>
             </Card>
           </div>
+
+          {/* Dedicated Section: Interactive Attendance Reports & Filter View */}
+          <Card className="shadow-sm border">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="font-display text-xl flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-primary" /> Attendance Reports & Live Records
+                  </CardTitle>
+                  <CardDescription>
+                    Browse attendance records with exact Entry and Exit timestamps in Indian Standard Time (IST).
+                  </CardDescription>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Date Scope Pills */}
+                  <div className="inline-flex p-0.5 bg-muted rounded-lg border text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setReportDateScope("today")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        reportDateScope === "today" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+                      }`}
+                    >
+                      Today ({today})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportDateScope("specific")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        reportDateScope === "specific" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+                      }`}
+                    >
+                      Specific Date
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportDateScope("range")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        reportDateScope === "range" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+                      }`}
+                    >
+                      Date Range
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportDateScope("all")}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                        reportDateScope === "all" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+                      }`}
+                    >
+                      All Records
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters Bar */}
+              <div className="grid gap-3 pt-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search name or ID…"
+                    value={reportSearch}
+                    onChange={(e) => setReportSearch(e.target.value)}
+                    className="pl-8 text-xs font-mono h-8"
+                  />
+                </div>
+
+                {reportDateScope === "specific" && (
+                  <Input
+                    type="date"
+                    value={reportSingleDate}
+                    onChange={(e) => setReportSingleDate(e.target.value)}
+                    className="text-xs font-mono h-8"
+                  />
+                )}
+
+                {reportDateScope === "range" && (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="date"
+                      value={reportStartDate}
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                      className="text-xs font-mono h-8"
+                    />
+                    <span className="text-xs text-muted-foreground">—</span>
+                    <Input
+                      type="date"
+                      value={reportEndDate}
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                      className="text-xs font-mono h-8"
+                    />
+                  </div>
+                )}
+
+                <Select value={reportEntryFilter} onValueChange={(v) => setReportEntryFilter(v as any)}>
+                  <SelectTrigger className="text-xs h-8">
+                    <SelectValue placeholder="Entry Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Entry: All</SelectItem>
+                    <SelectItem value="present">Entry: Present</SelectItem>
+                    <SelectItem value="missing">Entry: Missing</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={reportExitFilter} onValueChange={(v) => setReportExitFilter(v as any)}>
+                  <SelectTrigger className="text-xs h-8">
+                    <SelectValue placeholder="Exit Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Exit: All</SelectItem>
+                    <SelectItem value="present">Exit: Present</SelectItem>
+                    <SelectItem value="missing">Exit: Missing</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={reportMethodFilter} onValueChange={(v) => setReportMethodFilter(v as any)}>
+                  <SelectTrigger className="text-xs h-8">
+                    <SelectValue placeholder="Method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Method: All</SelectItem>
+                    <SelectItem value="face">Face Verified</SelectItem>
+                    <SelectItem value="qr">QR Scan</SelectItem>
+                    <SelectItem value="manual">Manual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              <div className="overflow-x-auto max-h-[500px]">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="border-b bg-muted/40 uppercase font-semibold text-muted-foreground sticky top-0 bg-background z-10">
+                    <tr>
+                      <th className="py-2.5 px-3">Sl. No.</th>
+                      <th className="py-2.5 px-3">Participant</th>
+                      <th className="py-2.5 px-3">Date</th>
+                      <th className="py-2.5 px-3">Entry Status</th>
+                      <th className="py-2.5 px-3">Entry Time (IST)</th>
+                      <th className="py-2.5 px-3">Exit Status</th>
+                      <th className="py-2.5 px-3">Exit Time (IST)</th>
+                      <th className="py-2.5 px-3">Verification Method</th>
+                      <th className="py-2.5 px-3">Overall Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {!reportAttendanceRecords.length ? (
+                      <tr>
+                        <td colSpan={9} className="py-12 text-center text-muted-foreground font-sans">
+                          No attendance records match the selected date scope and filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      reportAttendanceRecords.map((r, idx) => (
+                        <tr key={r.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-2.5 px-3 text-muted-foreground">{idx + 1}</td>
+                          <td className="py-2.5 px-3 font-sans">
+                            <span className="font-bold text-foreground">{r.fullName}</span>
+                            <span className="block text-[11px] font-mono text-muted-foreground">{r.participantCode}</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-muted-foreground">{r.date}</td>
+                          <td className="py-2.5 px-3">
+                            <Badge variant={r.isEntry ? "default" : "secondary"} className={r.isEntry ? "bg-emerald-600 text-[10px]" : "text-[10px]"}>
+                              {r.isEntry ? "Present" : "Missing"}
+                            </Badge>
+                          </td>
+                          <td className="py-2.5 px-3 text-foreground font-semibold">{r.entryTime}</td>
+                          <td className="py-2.5 px-3">
+                            <Badge variant={r.isExit ? "default" : "secondary"} className={r.isExit ? "bg-emerald-600 text-[10px]" : "text-[10px]"}>
+                              {r.isExit ? "Present" : "Missing"}
+                            </Badge>
+                          </td>
+                          <td className="py-2.5 px-3 text-foreground font-semibold">{r.exitTime}</td>
+                          <td className="py-2.5 px-3 text-muted-foreground">{r.method}</td>
+                          <td className="py-2.5 px-3">
+                            <Badge
+                              className={`text-[10px] ${
+                                r.overall === "Complete"
+                                  ? "bg-emerald-700 text-white"
+                                  : r.overall === "Entry Only"
+                                  ? "bg-amber-600 text-white"
+                                  : r.overall === "Exit Only"
+                                  ? "bg-orange-600 text-white"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {r.overall}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Audit Logs Table */}
           <Card className="shadow-sm">
@@ -2526,6 +3111,66 @@ function AdminPage() {
           />
         </Suspense>
       )}
+
+      {/* Projector Fullscreen QR Display Modal */}
+      <Dialog open={fullscreenQrOpen} onOpenChange={setFullscreenQrOpen}>
+        <DialogContent className="max-w-[95vw] sm:max-w-4xl h-[90vh] flex flex-col justify-between p-6 sm:p-10 bg-slate-950 text-white border-slate-800">
+          <DialogHeader className="border-b border-slate-800 pb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-2xl font-black font-display tracking-tight text-white">
+                  {settings?.name || "Workshop Attendance"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-400 font-mono mt-0.5">
+                  Session Date: {today} • Scan with native camera to record attendance
+                </DialogDescription>
+              </div>
+              {adminData?.activeQr && (
+                <Badge variant="outline" className="font-mono text-xs px-3 py-1 bg-emerald-950/60 text-emerald-400 border-emerald-500/50 animate-pulse">
+                  EXPIRING IN {Math.floor(timeLeftSec / 60)}m {timeLeftSec % 60}s
+                </Badge>
+              )}
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 flex flex-col items-center justify-center py-6 space-y-6">
+            {qrDataUrl && adminData?.activeQr ? (
+              <>
+                <div className="rounded-3xl border-8 border-slate-900 bg-white p-6 shadow-2xl">
+                  <img src={qrDataUrl} alt="Projector QR Code" className="h-64 w-64 sm:h-80 sm:w-80 md:h-[360px] md:w-[360px]" />
+                </div>
+                <div className="text-center space-y-1">
+                  <span className="text-xs uppercase font-mono tracking-widest text-slate-400 font-semibold">
+                    Alternative 6-Digit Code
+                  </span>
+                  <div className="font-mono text-5xl sm:text-6xl font-extrabold tracking-widest text-emerald-400">
+                    {adminData.activeQr.short_code}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-slate-400">No active QR code session.</div>
+            )}
+          </div>
+
+          <DialogFooter className="flex-row items-center justify-between border-t border-slate-800 pt-4">
+            <span className="text-xs text-slate-500 font-mono">
+              Press ESC or Close to return
+            </span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleCopyQrUrl} className="text-xs bg-slate-900 border-slate-700 text-white cursor-pointer">
+                <Copy className="h-3.5 w-3.5 mr-1" /> Copy URL
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleDownloadQrPng} className="text-xs bg-slate-900 border-slate-700 text-white cursor-pointer">
+                <Download className="h-3.5 w-3.5 mr-1" /> Download PNG
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setFullscreenQrOpen(false)} className="text-xs cursor-pointer">
+                Close Projector View
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

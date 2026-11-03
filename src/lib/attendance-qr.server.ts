@@ -756,10 +756,11 @@ export interface AdminFaceVerificationResult {
  */
 export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((input: { imageBase64: string; participantId?: string }) => {
+  .validator((input: { imageBase64: string; participantId?: string; sessionType?: "entry" | "exit" | "both" }) => {
     return {
       imageBase64: String(input.imageBase64 ?? "").trim(),
       participantId: input.participantId ? String(input.participantId).trim() : undefined,
+      sessionType: input.sessionType || "entry",
     };
   })
   .handler(async ({ data: input, context }): Promise<AdminFaceVerificationResult> => {
@@ -777,7 +778,7 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
     }
 
     // 2. Validate live capture image payload
-    const { imageBase64, participantId } = input;
+    const { imageBase64, participantId, sessionType = "entry" } = input;
     if (!imageBase64) {
       return {
         ok: false,
@@ -837,9 +838,10 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
       };
     }
 
-    // Calibrated verification threshold: updated to 0% (zero-threshold face matching)
+    // Calibrated internal verification threshold (40% safeguard against arbitrary auto-approvals)
+    const INTERNAL_FACE_MATCH_THRESHOLD = 40.0;
     const envThreshold = Number(process.env.FACE_VERIFICATION_CONFIDENCE_THRESHOLD);
-    const threshold = Number.isFinite(envThreshold) && envThreshold >= 0 ? envThreshold : 0;
+    const threshold = Number.isFinite(envThreshold) && envThreshold > 0 ? envThreshold : INTERNAL_FACE_MATCH_THRESHOLD;
 
     // Helper to generate signed photo URL
     const getPhotoUrl = async (photoPath: string | null): Promise<string | null> => {
@@ -868,35 +870,109 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
       // Check existing attendance record
       const { data: existing } = await supabaseAdmin
         .from("attendance")
-        .select("id, status, checked_in_at, method, remarks")
+        .select("id, status, morning_status, afternoon_status, checked_in_at, method, remarks")
         .eq("user_id", matchedProfile.id)
         .eq("day_date", today)
         .maybeSingle();
 
       const photoUrl = await getPhotoUrl(matchedProfile.photo_path);
 
-      if (existing) {
-        // Attendance was already marked (e.g. by QR or earlier face verification)
-        // Record second verification attempt in audit log without modifying original record
-        try {
-          await supabaseAdmin.from("audit_logs").insert({
-            actor_id: userId,
-            target_user: matchedProfile.id,
-            action: "face_verification_redundant_check",
-            details: {
-              existingMethod: existing.method,
-              confidence,
-              dayDate: today,
-            } as never,
-          });
-        } catch {
-          // ignore audit logging error
+      const hasEntry = Boolean(
+        existing &&
+          (existing.morning_status === "present" ||
+            (existing.status === "present" && !existing.morning_status)),
+      );
+      const hasExit = Boolean(existing && existing.afternoon_status === "present");
+
+      // Enforce Entry / Exit Attendance Rules
+      if (sessionType === "exit") {
+        if (!hasEntry) {
+          return {
+            ok: false,
+            resultCode: "ERROR",
+            message: "Entry attendance is missing for today. Participant must mark Entry attendance before Exit.",
+            confidence,
+            threshold,
+            participant: {
+              id: matchedProfile.id,
+              fullName: matchedProfile.full_name,
+              participantCode: matchedProfile.participant_code,
+              email: matchedProfile.email,
+              phone: matchedProfile.phone,
+              photoUrl,
+              verificationStatus: matchedProfile.verification_status,
+            },
+          };
         }
+
+        if (hasExit) {
+          return {
+            ok: true,
+            resultCode: "ALREADY_MARKED",
+            message: "Exit attendance has already been recorded for today.",
+            confidence,
+            threshold,
+            participant: {
+              id: matchedProfile.id,
+              fullName: matchedProfile.full_name,
+              participantCode: matchedProfile.participant_code,
+              email: matchedProfile.email,
+              phone: matchedProfile.phone,
+              photoUrl,
+              verificationStatus: matchedProfile.verification_status,
+            },
+            attendance: existing
+              ? {
+                  id: existing.id,
+                  status: existing.status,
+                  checkedInAt: existing.checked_in_at,
+                  dayDate: today,
+                  method: existing.method,
+                  remarks: existing.remarks,
+                }
+              : undefined,
+          };
+        }
+
+        // Record Exit
+        const updatedRemarks = existing?.remarks
+          ? `${existing.remarks} | EXIT_AT:${nowIso}`
+          : `Verified via Admin Face Console | EXIT_AT:${nowIso}`;
+
+        await supabaseAdmin
+          .from("attendance")
+          .update({
+            afternoon_status: "present",
+            status: "present",
+            remarks: updatedRemarks,
+            updated_at: nowIso,
+          })
+          .eq("id", existing!.id);
 
         return {
           ok: true,
+          resultCode: "VERIFIED_PRESENT",
+          message: `Identity confirmed. Exit attendance recorded for ${matchedProfile.full_name}.`,
+          confidence,
+          threshold,
+          participant: {
+            id: matchedProfile.id,
+            fullName: matchedProfile.full_name,
+            participantCode: matchedProfile.participant_code,
+            email: matchedProfile.email,
+            phone: matchedProfile.phone,
+            photoUrl,
+            verificationStatus: matchedProfile.verification_status,
+          },
+        };
+      }
+
+      // sessionType === "entry" or "both"
+      if (hasEntry) {
+        return {
+          ok: true,
           resultCode: "ALREADY_MARKED",
-          message: `Attendance is already marked as ${existing.status.toUpperCase()} (${existing.method === "qr" || existing.method === "qr_scan" ? "QR Verified" : existing.method === "qr_selfie" ? "Face Verified" : "Manually Marked"}) at ${new Date(existing.checked_in_at).toLocaleTimeString()}.`,
+          message: `Entry attendance has already been recorded for today.`,
           confidence,
           threshold,
           participant: {
@@ -909,12 +985,46 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
             verificationStatus: matchedProfile.verification_status,
           },
           attendance: {
-            id: existing.id,
-            status: existing.status,
-            checkedInAt: existing.checked_in_at,
+            id: existing!.id,
+            status: existing!.status,
+            checkedInAt: existing!.checked_in_at,
             dayDate: today,
-            method: existing.method,
-            remarks: existing.remarks,
+            method: existing!.method,
+            remarks: existing!.remarks,
+          },
+        };
+      }
+
+      if (existing) {
+        // Update existing record
+        await supabaseAdmin
+          .from("attendance")
+          .update({
+            morning_status: "present",
+            afternoon_status: sessionType === "both" ? "present" : existing.afternoon_status,
+            status: "present",
+            checked_in_at: existing.checked_in_at || nowIso,
+            method: "qr_selfie",
+            marked_by: userId,
+            remarks: `Verified via Admin Face Console`,
+            updated_at: nowIso,
+          })
+          .eq("id", existing.id);
+
+        return {
+          ok: true,
+          resultCode: "VERIFIED_PRESENT",
+          message: `Identity confirmed. Entry attendance recorded for ${matchedProfile.full_name}.`,
+          confidence,
+          threshold,
+          participant: {
+            id: matchedProfile.id,
+            fullName: matchedProfile.full_name,
+            participantCode: matchedProfile.participant_code,
+            email: matchedProfile.email,
+            phone: matchedProfile.phone,
+            photoUrl,
+            verificationStatus: matchedProfile.verification_status,
           },
         };
       }
@@ -927,10 +1037,10 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
           day_date: today,
           status: "present",
           morning_status: "present",
-          afternoon_status: "present",
+          afternoon_status: sessionType === "both" ? "present" : null,
           method: "qr_selfie", // The DB enum representing biometric face verification
           marked_by: userId,
-          remarks: `Verified via Admin Face Recognition Console (${confidence}% confidence)`,
+          remarks: `Verified via Admin Face Recognition Console`,
           checked_in_at: nowIso,
         })
         .select()

@@ -1,5 +1,13 @@
 import type ExcelJS from "exceljs";
-import { safeCell, type Settings, type Summary, workshopDays } from "./attendance";
+import {
+  safeCell,
+  type Settings,
+  type Summary,
+  workshopDays,
+  resolveSessionAttendance,
+  formatIstTimestamp,
+  formatIstDate,
+} from "./attendance";
 
 let _exceljsPromise: Promise<any> | null = null;
 async function getExcelJS() {
@@ -302,6 +310,406 @@ export async function generateIndividualReportWorkbook(
       safeCell(raw?.remarks ?? ""),
     ]);
     applyBodyStyle(row);
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return new Uint8Array(buffer);
+}
+
+/**
+ * Summary Statistics Worksheet Generator
+ */
+function addSummaryWorksheet(
+  wb: any,
+  title = "Summary Statistics",
+  stats: {
+    workshopName: string;
+    reportScope: string;
+    totalParticipants: number;
+    totalEntryCount: number;
+    totalExitCount: number;
+    completeAttendanceCount: number;
+    entryOnlyCount: number;
+    exitOnlyCount: number;
+    noAttendanceCount: number;
+  },
+) {
+  const ws = wb.addWorksheet(title, {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  ws.columns = [
+    { header: "Attendance Metric", key: "metric", width: 36 },
+    { header: "Count / Value", key: "value", width: 28 },
+  ];
+  applyHeaderStyle(ws.getRow(1));
+
+  const entryPct = stats.totalParticipants
+    ? `${((stats.totalEntryCount / stats.totalParticipants) * 100).toFixed(1)}%`
+    : "0%";
+  const exitPct = stats.totalParticipants
+    ? `${((stats.totalExitCount / stats.totalParticipants) * 100).toFixed(1)}%`
+    : "0%";
+  const completePct = stats.totalParticipants
+    ? `${((stats.completeAttendanceCount / stats.totalParticipants) * 100).toFixed(1)}%`
+    : "0%";
+
+  const rows = [
+    { metric: "Workshop Name", value: stats.workshopName },
+    { metric: "Report Scope / Date Range", value: stats.reportScope },
+    { metric: "Total Registered Participants", value: stats.totalParticipants },
+    { metric: "Total Entry Records", value: stats.totalEntryCount },
+    { metric: "Total Exit Records", value: stats.totalExitCount },
+    { metric: "Complete Attendance (Both Entry & Exit)", value: stats.completeAttendanceCount },
+    { metric: "Entry Only Attendance", value: stats.entryOnlyCount },
+    { metric: "Exit Only Attendance", value: stats.exitOnlyCount },
+    { metric: "No Attendance (Absent)", value: stats.noAttendanceCount },
+    { metric: "Entry Attendance Percentage", value: entryPct },
+    { metric: "Exit Attendance Percentage", value: exitPct },
+    { metric: "Complete Attendance Percentage", value: completePct },
+    { metric: "Report Generated On", value: formatIstTimestamp(new Date()) },
+  ];
+
+  rows.forEach((r) => {
+    const row = ws.addRow(r);
+    applyBodyStyle(row);
+  });
+}
+
+/**
+ * Single-Day Excel Download:
+ * Exports all participants (including absentees) for a selected date with exact timestamps in IST.
+ */
+export async function generateDailyAttendanceExcel({
+  date,
+  participants,
+  attendanceRecords,
+  settings,
+}: {
+  date: string;
+  participants: Array<{
+    id: string;
+    participant_code: string;
+    full_name: string;
+    phone?: string;
+    email?: string;
+  }>;
+  attendanceRecords: Array<{
+    user_id: string;
+    status: string;
+    morning_status?: string | null;
+    afternoon_status?: string | null;
+    entry_status?: string | null;
+    exit_status?: string | null;
+    checked_in_at?: string | null;
+    updated_at?: string | null;
+    remarks?: string | null;
+    method?: string | null;
+  }>;
+  settings?: Settings | null;
+}): Promise<Uint8Array> {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = settings?.name || "Event Management Portal";
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet(`Attendance ${date}`, {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  const columns: Partial<ExcelJS.Column>[] = [
+    { header: "Sl. No.", key: "sl", width: 10 },
+    { header: "Participant ID", key: "id", width: 22 },
+    { header: "Name", key: "name", width: 26 },
+    { header: "Registration Number", key: "code", width: 22 },
+    { header: "Date", key: "date", width: 16 },
+    { header: "Entry Status", key: "entry_status", width: 16 },
+    { header: "Entry Time", key: "entry_time", width: 22 },
+    { header: "Exit Status", key: "exit_status", width: 16 },
+    { header: "Exit Time", key: "exit_time", width: 22 },
+    { header: "Verification Method", key: "method", width: 22 },
+    { header: "Overall Status", key: "overall_status", width: 18 },
+  ];
+  ws.columns = columns;
+  applyHeaderStyle(ws.getRow(1));
+
+  // Enable autoFilter
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: columns.length },
+  };
+
+  const attMap = new Map<string, (typeof attendanceRecords)[number]>();
+  attendanceRecords.forEach((a) => attMap.set(a.user_id, a));
+
+  let totalEntry = 0;
+  let totalExit = 0;
+  let completeCount = 0;
+  let entryOnlyCount = 0;
+  let exitOnlyCount = 0;
+  let noAttendanceCount = 0;
+
+  participants.forEach((p, idx) => {
+    const att = attMap.get(p.id);
+    const session = resolveSessionAttendance(att);
+
+    const hasEntry = session.entry;
+    const hasExit = session.exit;
+
+    if (hasEntry) totalEntry++;
+    if (hasExit) totalExit++;
+
+    let overall = "Absent";
+    if (hasEntry && hasExit) {
+      overall = "Complete";
+      completeCount++;
+    } else if (hasEntry) {
+      overall = "Entry Only";
+      entryOnlyCount++;
+    } else if (hasExit) {
+      overall = "Exit Only";
+      exitOnlyCount++;
+    } else {
+      noAttendanceCount++;
+    }
+
+    const methodDisplay = !att
+      ? "-"
+      : att.method === "qr_selfie" || att.method === "face"
+      ? "Face Recognition"
+      : att.method === "qr" || att.method === "qr_scan"
+      ? "QR Scan"
+      : att.method === "manual"
+      ? "Manual Override"
+      : att.method ?? "-";
+
+    const entryTimeFormatted = session.entryTime ? formatIstTimestamp(session.entryTime) : "-";
+    const exitTimeFormatted = session.exitTime ? formatIstTimestamp(session.exitTime) : "-";
+
+    const row = ws.addRow({
+      sl: idx + 1,
+      id: safeCell(p.id),
+      name: safeCell(p.full_name),
+      code: safeCell(p.participant_code),
+      date: formatIstDate(date),
+      entry_status: hasEntry ? "Present" : "Missing",
+      entry_time: entryTimeFormatted,
+      exit_status: hasExit ? "Present" : "Missing",
+      exit_time: exitTimeFormatted,
+      method: methodDisplay,
+      overall_status: overall,
+    });
+    applyBodyStyle(row);
+
+    // Color code overall status
+    const overallCell = row.getCell("overall_status");
+    if (overall === "Complete") {
+      overallCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF16A34A" } };
+    } else if (overall === "Absent") {
+      overallCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFDC2626" } };
+    } else {
+      overallCell.font = { name: "Calibri", size: 10, color: { argb: "FFD97706" } };
+    }
+  });
+
+  // Sheet 2: Summary Worksheet
+  addSummaryWorksheet(wb, "Summary Statistics", {
+    workshopName: settings?.name || "ESDP Workshop",
+    reportScope: `Selected Date: ${formatIstDate(date)} (${date})`,
+    totalParticipants: participants.length,
+    totalEntryCount: totalEntry,
+    totalExitCount: totalExit,
+    completeAttendanceCount: completeCount,
+    entryOnlyCount,
+    exitOnlyCount,
+    noAttendanceCount,
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return new Uint8Array(buffer);
+}
+
+/**
+ * Date Range / Bulk Attendance Excel Download:
+ * Generates an Excel workbook for a selected date range with All, Entry-only, or Exit-only.
+ */
+export async function generateDateRangeAttendanceExcel({
+  startDate,
+  endDate,
+  participants,
+  attendanceRecords,
+  settings,
+  sessionType = "all",
+}: {
+  startDate: string;
+  endDate: string;
+  participants: Array<{
+    id: string;
+    participant_code: string;
+    full_name: string;
+    phone?: string;
+    email?: string;
+  }>;
+  attendanceRecords: Array<{
+    user_id: string;
+    day_date: string;
+    status: string;
+    morning_status?: string | null;
+    afternoon_status?: string | null;
+    entry_status?: string | null;
+    exit_status?: string | null;
+    checked_in_at?: string | null;
+    updated_at?: string | null;
+    remarks?: string | null;
+    method?: string | null;
+  }>;
+  settings?: Settings | null;
+  sessionType?: "all" | "entry" | "exit";
+}): Promise<Uint8Array> {
+  const ExcelJS = await getExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = settings?.name || "Event Management Portal";
+  wb.created = new Date();
+
+  const titleSuffix = sessionType === "entry" ? "Entry Attendance" : sessionType === "exit" ? "Exit Attendance" : "Attendance";
+  const ws = wb.addWorksheet(titleSuffix, {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  const columns: Partial<ExcelJS.Column>[] = [
+    { header: "Sl. No.", key: "sl", width: 10 },
+    { header: "Participant ID", key: "id", width: 22 },
+    { header: "Name", key: "name", width: 26 },
+    { header: "Registration Number", key: "code", width: 22 },
+    { header: "Attendance Date", key: "date", width: 16 },
+  ];
+
+  if (sessionType === "all" || sessionType === "entry") {
+    columns.push(
+      { header: "Entry Status", key: "entry_status", width: 16 },
+      { header: "Entry Time (IST)", key: "entry_time", width: 22 },
+    );
+  }
+  if (sessionType === "all" || sessionType === "exit") {
+    columns.push(
+      { header: "Exit Status", key: "exit_status", width: 16 },
+      { header: "Exit Time (IST)", key: "exit_time", width: 22 },
+    );
+  }
+  columns.push(
+    { header: "Verification Method", key: "method", width: 22 },
+    { header: "Overall Status", key: "overall_status", width: 18 },
+  );
+
+  ws.columns = columns;
+  applyHeaderStyle(ws.getRow(1));
+
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: columns.length },
+  };
+
+  // Map of date -> userId -> record
+  const mapByDateAndUser = new Map<string, Map<string, (typeof attendanceRecords)[number]>>();
+  attendanceRecords.forEach((a) => {
+    let dayMap = mapByDateAndUser.get(a.day_date);
+    if (!dayMap) {
+      dayMap = new Map();
+      mapByDateAndUser.set(a.day_date, dayMap);
+    }
+    dayMap.set(a.user_id, a);
+  });
+
+  // Collect all unique dates in range sorted ascending
+  const uniqueDates = Array.from(
+    new Set(attendanceRecords.map((a) => a.day_date).concat([startDate, endDate])),
+  )
+    .filter((d) => d >= startDate && d <= endDate)
+    .sort();
+
+  let sl = 1;
+  let totalEntry = 0;
+  let totalExit = 0;
+  let completeCount = 0;
+  let entryOnlyCount = 0;
+  let exitOnlyCount = 0;
+  let noAttendanceCount = 0;
+
+  uniqueDates.forEach((d) => {
+    const dayMap = mapByDateAndUser.get(d) ?? new Map();
+    participants.forEach((p) => {
+      const att = dayMap.get(p.id);
+      const session = resolveSessionAttendance(att);
+
+      const hasEntry = session.entry;
+      const hasExit = session.exit;
+
+      if (hasEntry) totalEntry++;
+      if (hasExit) totalExit++;
+
+      let overall = "Absent";
+      if (hasEntry && hasExit) {
+        overall = "Complete";
+        completeCount++;
+      } else if (hasEntry) {
+        overall = "Entry Only";
+        entryOnlyCount++;
+      } else if (hasExit) {
+        overall = "Exit Only";
+        exitOnlyCount++;
+      } else {
+        noAttendanceCount++;
+      }
+
+      // Filter by sessionType if entry-only or exit-only requested
+      if (sessionType === "entry" && !hasEntry) return;
+      if (sessionType === "exit" && !hasExit) return;
+
+      const methodDisplay = !att
+        ? "-"
+        : att.method === "qr_selfie" || att.method === "face"
+        ? "Face Recognition"
+        : att.method === "qr" || att.method === "qr_scan"
+        ? "QR Scan"
+        : att.method === "manual"
+        ? "Manual Override"
+        : att.method ?? "-";
+
+      const rowValues: Record<string, unknown> = {
+        sl: sl++,
+        id: safeCell(p.id),
+        name: safeCell(p.full_name),
+        code: safeCell(p.participant_code),
+        date: formatIstDate(d),
+        method: methodDisplay,
+        overall_status: overall,
+      };
+
+      if (sessionType === "all" || sessionType === "entry") {
+        rowValues.entry_status = hasEntry ? "Present" : "Missing";
+        rowValues.entry_time = session.entryTime ? formatIstTimestamp(session.entryTime) : "-";
+      }
+      if (sessionType === "all" || sessionType === "exit") {
+        rowValues.exit_status = hasExit ? "Present" : "Missing";
+        rowValues.exit_time = session.exitTime ? formatIstTimestamp(session.exitTime) : "-";
+      }
+
+      const row = ws.addRow(rowValues);
+      applyBodyStyle(row);
+    });
+  });
+
+  // Summary Sheet
+  addSummaryWorksheet(wb, "Summary Statistics", {
+    workshopName: settings?.name || "ESDP Workshop",
+    reportScope: `Date Range: ${formatIstDate(startDate)} to ${formatIstDate(endDate)}`,
+    totalParticipants: participants.length,
+    totalEntryCount: totalEntry,
+    totalExitCount: totalExit,
+    completeAttendanceCount: completeCount,
+    entryOnlyCount,
+    exitOnlyCount,
+    noAttendanceCount,
   });
 
   const buffer = await wb.xlsx.writeBuffer();

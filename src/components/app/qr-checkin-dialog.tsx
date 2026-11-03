@@ -16,15 +16,21 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   requireSelfie?: boolean;
   userId?: string;
+  sessionType?: "entry" | "exit" | "both";
 }
 
-export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: Props) {
+export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId, sessionType: initialSessionType = "entry" }: Props) {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"camera" | "code">("camera");
+  const [currentSessionType, setCurrentSessionType] = useState<"entry" | "exit" | "both">(initialSessionType);
   const [shortCode, setShortCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCurrentSessionType(initialSessionType);
+  }, [initialSessionType, open]);
   const [facingMode, setFacingMode] = useState<"environment" | "user">(
     requireSelfie ? "user" : "environment"
   );
@@ -86,7 +92,7 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
           selfiePath = path;
         }
 
-        const res = await checkIn({ data: { code: clean, selfiePath } });
+        const res = await checkIn({ data: { code: clean, selfiePath, sessionType: currentSessionType } });
         if (res.ok) {
           toast.success(res.message);
           await qc.invalidateQueries({ queryKey: ["my_attendance"] });
@@ -101,7 +107,7 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
         setBusy(false);
       }
     },
-    [busy, requireSelfie, selfieBlob, userId, qc, onOpenChange],
+    [busy, requireSelfie, selfieBlob, userId, currentSessionType, qc, onOpenChange],
   );
 
   // Scan frame loop using jsQR
@@ -226,12 +232,43 @@ export function QrCheckinDialog({ open, onOpenChange, requireSelfie, userId }: P
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-display text-xl">
-            <Camera className="h-5 w-5 text-primary" /> Daily Attendance Check-In
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2 font-display text-xl">
+              <Camera className="h-5 w-5 text-primary" />
+              {currentSessionType === "exit" ? "Exit Attendance" : "Entry Attendance"}
+            </DialogTitle>
+            <Badge variant="outline" className="font-mono text-xs uppercase text-primary border-primary">
+              {currentSessionType === "exit" ? "Departure Check-out" : "Arrival Check-in"}
+            </Badge>
+          </div>
           <DialogDescription>
-            Scan the live workshop QR code on the projector screen or enter the 6-character daily code.
+            {currentSessionType === "exit"
+              ? "Mark your exit departure attendance for today by scanning the workshop QR code."
+              : "Mark your arrival entry attendance for today by scanning the workshop QR code."}
           </DialogDescription>
+
+          <div className="flex justify-center pt-2">
+            <div className="inline-flex p-1 bg-muted rounded-lg border text-xs">
+              <button
+                type="button"
+                onClick={() => setCurrentSessionType("entry")}
+                className={`px-3 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                  currentSessionType === "entry" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+                }`}
+              >
+                Entry Attendance
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentSessionType("exit")}
+                className={`px-3 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                  currentSessionType === "exit" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground"
+                }`}
+              >
+                Exit Attendance
+              </button>
+            </div>
+          </div>
         </DialogHeader>
 
         {requireSelfie && !selfieBlob && (

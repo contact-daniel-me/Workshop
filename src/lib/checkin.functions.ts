@@ -57,11 +57,12 @@ export type CheckinResult =
 /** Participant: validate QR token/short code server-side and record attendance once. */
 export const checkIn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((input: { code: string; selfiePath?: string | null }) => {
+  .validator((input: { code: string; selfiePath?: string | null; sessionType?: "entry" | "exit" | "both" }) => {
     const code = String(input.code ?? "").trim();
     if (!code || code.length > 100) throw new Error("Invalid code");
     const selfiePath = input.selfiePath ? String(input.selfiePath).slice(0, 300) : null;
-    return { code, selfiePath };
+    const sessionType = input.sessionType || "entry";
+    return { code, selfiePath, sessionType };
   })
   .handler(async ({ data, context }): Promise<CheckinResult> => {
     const { userId } = context;
@@ -102,6 +103,47 @@ export const checkIn = createServerFn({ method: "POST" })
       await log("checkin_expired_code", { day: today });
       return { ok: false, message: "This QR code has expired. Ask the organiser to show the current one." };
     }
+
+    // Check existing attendance for this user and day
+    const { data: existingAttendance } = await supabaseAdmin
+      .from("attendance")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("day_date", today)
+      .maybeSingle();
+
+    const hasEntry = Boolean(
+      existingAttendance &&
+        (existingAttendance.morning_status === "present" ||
+          (existingAttendance.status === "present" && !existingAttendance.morning_status)),
+    );
+    const hasExit = Boolean(existingAttendance && existingAttendance.afternoon_status === "present");
+
+    // Enforce Entry / Exit Attendance Rules
+    if (data.sessionType === "entry") {
+      if (hasEntry) {
+        await log("checkin_duplicate_entry", { day: today });
+        return { ok: false, message: "Entry attendance for today is already recorded." };
+      }
+    } else if (data.sessionType === "exit") {
+      if (!hasEntry) {
+        await log("checkin_missing_entry_for_exit", { day: today });
+        return {
+          ok: false,
+          message: "Entry attendance is missing for today. You must mark Entry attendance first before marking Exit attendance.",
+        };
+      }
+      if (hasExit) {
+        await log("checkin_duplicate_exit", { day: today });
+        return { ok: false, message: "Exit attendance for today is already recorded." };
+      }
+    } else if (data.sessionType === "both") {
+      if (hasEntry && hasExit) {
+        await log("checkin_duplicate_both", { day: today });
+        return { ok: false, message: "Both Entry and Exit attendance for today are already recorded." };
+      }
+    }
+
     let status: "present" | "pending" = "present";
     let remarks: string | null = null;
     let confidenceScore: number | null = null;
@@ -127,16 +169,15 @@ export const checkIn = createServerFn({ method: "POST" })
             dayDate: today,
             referencePhotoPath: userProf.photo_path,
             selfiePhotoPath: data.selfiePath,
-            threshold: 0,
           });
 
           confidenceScore = verifRes.confidence;
           if (verifRes.verified) {
             status = "present";
-            remarks = `Biometric match confirmed (${verifRes.confidence}%) via ${verifRes.provider}`;
+            remarks = `Biometric match confirmed via ${verifRes.provider}`;
           } else {
             status = "pending";
-            remarks = `Match score: ${verifRes.confidence}%. Queued for manual admin confirmation.`;
+            remarks = "Biometric match queued for administrator confirmation.";
           }
         } catch (verifErr) {
           console.error("Face verification execution error:", verifErr);
@@ -149,32 +190,97 @@ export const checkIn = createServerFn({ method: "POST" })
       }
     }
 
-    const { error } = await supabaseAdmin.from("attendance").insert({
-      user_id: userId,
-      day_date: today,
-      status,
-      morning_status: status === "present" ? "present" : null,
-      afternoon_status: status === "present" ? "present" : null,
-      method: settings.require_selfie ? "qr_selfie" : "qr",
-      selfie_path: settings.require_selfie ? data.selfiePath : null,
-      qr_session_id: session.id,
-      remarks,
-      confidence_score: confidenceScore,
-    });
-    if (error) {
-      if (error.code === "23505") {
-        await log("checkin_duplicate", { day: today });
-        return { ok: false, message: "Your attendance for today is already recorded." };
-      }
-      throw new Error(error.message);
+    const nowIso = new Date().toISOString();
+
+    if (data.sessionType === "exit" && existingAttendance) {
+      const updatedRemarks = existingAttendance.remarks
+        ? `${existingAttendance.remarks} | EXIT_AT:${nowIso}`
+        : `EXIT_AT:${nowIso}`;
+
+      const { error: updateErr } = await supabaseAdmin
+        .from("attendance")
+        .update({
+          afternoon_status: status === "present" ? "present" : null,
+          status: "present",
+          remarks: updatedRemarks,
+          updated_at: nowIso,
+        })
+        .eq("id", existingAttendance.id);
+
+      if (updateErr) throw new Error(updateErr.message);
+
+      await log("checkin_exit", { day: today, status, sessionType: "exit" });
+      return {
+        ok: true,
+        status,
+        message:
+          status === "present"
+            ? "Identity verified! Your Exit attendance has been recorded successfully."
+            : "Exit attendance submitted and queued for administrator verification.",
+      };
     }
-    await log("checkin", { day: today, status, confidence: confidenceScore });
+
+    if (existingAttendance) {
+      // Existing row (e.g. from admin pending or incomplete)
+      const isExitAction = data.sessionType === "exit";
+      const isBothAction = data.sessionType === "both";
+
+      const updatedRemarks = isExitAction
+        ? (existingAttendance.remarks ? `${existingAttendance.remarks} | EXIT_AT:${nowIso}` : `EXIT_AT:${nowIso}`)
+        : (remarks || existingAttendance.remarks);
+
+      const { error: updateErr } = await supabaseAdmin
+        .from("attendance")
+        .update({
+          morning_status: isExitAction ? existingAttendance.morning_status : (status === "present" ? "present" : null),
+          afternoon_status: isExitAction || isBothAction ? (status === "present" ? "present" : null) : existingAttendance.afternoon_status,
+          status: status === "present" ? "present" : existingAttendance.status,
+          checked_in_at: existingAttendance.checked_in_at || nowIso,
+          method: settings.require_selfie ? "qr_selfie" : "qr",
+          selfie_path: settings.require_selfie ? data.selfiePath : existingAttendance.selfie_path,
+          qr_session_id: session.id,
+          remarks: updatedRemarks,
+          confidence_score: confidenceScore ?? existingAttendance.confidence_score,
+          updated_at: nowIso,
+        })
+        .eq("id", existingAttendance.id);
+
+      if (updateErr) throw new Error(updateErr.message);
+    } else {
+      // First check-in of the day (Entry)
+      const { error: insertErr } = await supabaseAdmin.from("attendance").insert({
+        user_id: userId,
+        day_date: today,
+        status,
+        morning_status: status === "present" ? "present" : null,
+        afternoon_status: data.sessionType === "both" && status === "present" ? "present" : null,
+        method: settings.require_selfie ? "qr_selfie" : "qr",
+        selfie_path: settings.require_selfie ? data.selfiePath : null,
+        qr_session_id: session.id,
+        remarks,
+        confidence_score: confidenceScore,
+        checked_in_at: nowIso,
+        updated_at: nowIso,
+      });
+
+      if (insertErr) {
+        if (insertErr.code === "23505") {
+          await log("checkin_duplicate", { day: today });
+          return { ok: false, message: "Your attendance for today is already recorded." };
+        }
+        throw new Error(insertErr.message);
+      }
+    }
+
+    await log("checkin", { day: today, status, sessionType: data.sessionType });
     return {
       ok: true,
       status,
       message:
         status === "present"
-          ? (confidenceScore ? `Identity verified (${confidenceScore}%)! You're marked present for today.` : "You're marked present for today.")
-          : "Submitted! Face score queued for administrator verification.",
+          ? (data.sessionType === "both"
+              ? "Your attendance for today is marked present."
+              : "Identity verified! Your Entry attendance is marked present.")
+          : "Submitted! Face verification queued for administrator review.",
     };
   });

@@ -111,6 +111,8 @@ async function callExternalProvider(
   };
 }
 
+export const INTERNAL_CALIBRATED_FACE_THRESHOLD = 40.0;
+
 /**
  * Full Face Verification Pipeline:
  * 1. Checks and asserts biometric consent.
@@ -125,11 +127,17 @@ export async function verifyFaceAndRecordAttempt({
   dayDate,
   referencePhotoPath,
   selfiePhotoPath,
-  threshold = 0,
+  threshold,
 }: VerificationOptions): Promise<FaceVerificationResult> {
   const providerType = process.env.FACE_VERIFICATION_PROVIDER || "server_vision";
   const externalApiUrl = process.env.FACE_VERIFICATION_API_URL;
   const externalApiKey = process.env.FACE_VERIFICATION_API_KEY;
+
+  // Internal technical threshold: Calibrated safeguard (defaults to 40% if not explicitly configured)
+  const effectiveThreshold =
+    typeof threshold === "number" && threshold > 0
+      ? threshold
+      : Number(process.env.FACE_VERIFICATION_CONFIDENCE_THRESHOLD) || INTERNAL_CALIBRATED_FACE_THRESHOLD;
 
   let confidence = 0;
   let matchResult = false;
@@ -150,11 +158,11 @@ export async function verifyFaceAndRecordAttempt({
       providerResponse = externalRes.raw;
     } else {
       confidence = computeVisualFeatureSimilarity(refBuffer, selfieBuffer);
-      matchResult = confidence >= threshold && confidence > 0;
+      matchResult = confidence >= effectiveThreshold && confidence > 0;
       providerResponse = {
         engine: "server_vision_histogram_and_gradient",
         cosine_confidence: confidence,
-        threshold,
+        threshold: effectiveThreshold,
         analyzed_at: new Date().toISOString(),
       };
     }
@@ -197,8 +205,8 @@ export async function verifyFaceAndRecordAttempt({
     matchResult,
     status,
     reason: matchResult
-      ? `Identity confirmed with ${confidence}% similarity.`
-      : `Face similarity score (${confidence}%) did not establish identity. Awaiting manual administrator confirmation.`,
+      ? "Identity confirmed by biometric face verification."
+      : "Face identity could not be verified automatically. Flagged for administrator review.",
     providerResponse,
   };
 }
