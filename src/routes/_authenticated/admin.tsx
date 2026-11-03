@@ -1130,6 +1130,7 @@ function AdminPage() {
               void refetch();
             }}
             initialDate={dailyDate}
+            allAttendance={adminData?.attendance}
           />
         </TabsContent>
 

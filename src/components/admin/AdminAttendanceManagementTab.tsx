@@ -18,6 +18,11 @@ import {
   AlertTriangle,
   ArrowUpDown,
   CalendarDays,
+  Download,
+  FileSpreadsheet,
+  ChevronDown,
+  RefreshCw,
+  FileDown,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,7 +76,12 @@ import {
   type WorkshopDayRecord,
   type Settings,
 } from "@/lib/attendance";
-import type { ParticipantRow } from "@/lib/excel";
+import {
+  type ParticipantRow,
+  generateDailyAttendanceExcel,
+  generateDateRangeAttendanceExcel,
+  downloadExcelFile,
+} from "@/lib/excel";
 import { ManageWorkshopHolidaysDialog } from "./ManageWorkshopHolidaysDialog";
 import { ResetWorkshopTimelineDialog } from "./ResetWorkshopTimelineDialog";
 
@@ -83,6 +93,17 @@ interface AdminAttendanceManagementTabProps {
   configuredDays?: WorkshopDayRecord[];
   onSettingsUpdated?: () => Promise<void> | void;
   initialDate?: string;
+  allAttendance?: Array<{
+    id?: string;
+    user_id: string;
+    day_date: string;
+    status: string;
+    method?: string | null;
+    checked_in_at?: string | null;
+    remarks?: string | null;
+    morning_status?: string | null;
+    afternoon_status?: string | null;
+  }>;
 }
 
 export function AdminAttendanceManagementTab({
@@ -93,6 +114,7 @@ export function AdminAttendanceManagementTab({
   configuredDays = [],
   onSettingsUpdated,
   initialDate,
+  allAttendance,
 }: AdminAttendanceManagementTabProps) {
   const today = todayLocal();
 
@@ -266,6 +288,219 @@ export function AdminAttendanceManagementTab({
       else next.add(id);
       return next;
     });
+  };
+
+  // ---------------------------------------------------------------------------
+  // ATTENDANCE EXCEL EXPORT HANDLERS (Entry & Exit Data)
+  // ---------------------------------------------------------------------------
+  const [downloadingExport, setDownloadingExport] = useState<string | null>(null);
+
+  const handleDownloadAttendanceExcel = async (
+    type: "all_sessions" | "entry_only" | "exit_only" | "filtered"
+  ) => {
+    if (approvedParticipants.length === 0) {
+      toast.error("No verified participants found to export.");
+      return;
+    }
+    setDownloadingExport(type);
+    try {
+      const participantsList = approvedParticipants.map((p) => ({
+        id: p.id,
+        participant_code: p.participant_code,
+        full_name: p.full_name,
+        phone: p.phone,
+        email: p.email,
+      }));
+
+      if (type === "all_sessions") {
+        const dayRecords = approvedParticipants.map((p) => {
+          const att = p.rawAttendance[selectedDate];
+          return {
+            user_id: p.id,
+            status: att?.status ?? "absent",
+            morning_status: att?.morning_status ?? null,
+            afternoon_status: att?.afternoon_status ?? null,
+            entry_status: att?.morning_status ?? null,
+            exit_status: att?.afternoon_status ?? null,
+            checked_in_at: att?.checked_in_at ?? null,
+            remarks: att?.remarks ?? null,
+            method: att?.method ?? null,
+          };
+        });
+
+        const bytes = await generateDailyAttendanceExcel({
+          date: selectedDate,
+          participants: participantsList,
+          attendanceRecords: dayRecords,
+          settings,
+        });
+
+        downloadExcelFile(bytes, `ESDP_Attendance_${selectedDate}.xlsx`);
+        toast.success(`Exported daily attendance (Entry & Exit) for ${selectedDate}`);
+      } else if (type === "entry_only" || type === "exit_only") {
+        const dayRecords = approvedParticipants.map((p) => {
+          const att = p.rawAttendance[selectedDate];
+          return {
+            user_id: p.id,
+            day_date: selectedDate,
+            status: att?.status ?? "absent",
+            morning_status: att?.morning_status ?? null,
+            afternoon_status: att?.afternoon_status ?? null,
+            entry_status: att?.morning_status ?? null,
+            exit_status: att?.afternoon_status ?? null,
+            checked_in_at: att?.checked_in_at ?? null,
+            remarks: att?.remarks ?? null,
+            method: att?.method ?? null,
+          };
+        });
+
+        const session = type === "entry_only" ? "entry" : "exit";
+        const bytes = await generateDateRangeAttendanceExcel({
+          startDate: selectedDate,
+          endDate: selectedDate,
+          participants: participantsList,
+          attendanceRecords: dayRecords,
+          settings,
+          sessionType: session,
+        });
+
+        const filename =
+          type === "entry_only"
+            ? `ESDP_Entry_Attendance_${selectedDate}.xlsx`
+            : `ESDP_Exit_Attendance_${selectedDate}.xlsx`;
+        downloadExcelFile(bytes, filename);
+        toast.success(
+          `Exported ${type === "entry_only" ? "Entry" : "Exit"} attendance for ${selectedDate}`
+        );
+      } else if (type === "filtered") {
+        if (filteredRows.length === 0) {
+          toast.error("No participants match the current filter to export.");
+          return;
+        }
+        const filteredParticipants = filteredRows.map((r) => ({
+          id: r.participant.id,
+          participant_code: r.participant.participant_code,
+          full_name: r.participant.full_name,
+          phone: r.participant.phone,
+          email: r.participant.email,
+        }));
+
+        const dayRecords = filteredRows.map((r) => {
+          const att = r.att;
+          return {
+            user_id: r.participant.id,
+            status: att?.status ?? "absent",
+            morning_status: att?.morning_status ?? null,
+            afternoon_status: att?.afternoon_status ?? null,
+            entry_status: att?.morning_status ?? null,
+            exit_status: att?.afternoon_status ?? null,
+            checked_in_at: att?.checked_in_at ?? null,
+            remarks: att?.remarks ?? null,
+            method: att?.method ?? null,
+          };
+        });
+
+        const bytes = await generateDailyAttendanceExcel({
+          date: selectedDate,
+          participants: filteredParticipants,
+          attendanceRecords: dayRecords,
+          settings,
+        });
+
+        downloadExcelFile(bytes, `ESDP_Attendance_${selectedDate}_Filtered.xlsx`);
+        toast.success(`Exported filtered attendance (${filteredRows.length} participants)`);
+      }
+    } catch (err: unknown) {
+      console.error("Export attendance error:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to export attendance data");
+    } finally {
+      setDownloadingExport(null);
+    }
+  };
+
+  const handleDownloadAllHistory = async () => {
+    if (approvedParticipants.length === 0) {
+      toast.error("No verified participants found to export.");
+      return;
+    }
+    setDownloadingExport("history");
+    try {
+      const participantsList = approvedParticipants.map((p) => ({
+        id: p.id,
+        participant_code: p.participant_code,
+        full_name: p.full_name,
+        phone: p.phone,
+        email: p.email,
+      }));
+
+      const allRecords: Array<{
+        user_id: string;
+        day_date: string;
+        status: string;
+        morning_status?: string | null;
+        afternoon_status?: string | null;
+        entry_status?: string | null;
+        exit_status?: string | null;
+        checked_in_at?: string | null;
+        remarks?: string | null;
+        method?: string | null;
+      }> = [];
+
+      if (allAttendance && allAttendance.length > 0) {
+        allAttendance.forEach((a) => {
+          allRecords.push({
+            user_id: a.user_id,
+            day_date: a.day_date,
+            status: a.status,
+            morning_status: a.morning_status ?? null,
+            afternoon_status: a.afternoon_status ?? null,
+            entry_status: a.morning_status ?? null,
+            exit_status: a.afternoon_status ?? null,
+            checked_in_at: a.checked_in_at ?? null,
+            remarks: a.remarks ?? null,
+            method: a.method ?? null,
+          });
+        });
+      } else {
+        approvedParticipants.forEach((p) => {
+          Object.entries(p.rawAttendance).forEach(([dayDate, att]) => {
+            allRecords.push({
+              user_id: p.id,
+              day_date: dayDate,
+              status: att.status,
+              morning_status: att.morning_status,
+              afternoon_status: att.afternoon_status,
+              entry_status: att.morning_status,
+              exit_status: att.afternoon_status,
+              checked_in_at: att.checked_in_at,
+              remarks: att.remarks,
+              method: att.method,
+            });
+          });
+        });
+      }
+
+      const recordedDates = allRecords.map((r) => r.day_date).filter(Boolean).sort();
+      const startDate = recordedDates[0] || (settings?.start_date ?? selectedDate);
+      const endDate = recordedDates[recordedDates.length - 1] || selectedDate;
+
+      const bytes = await generateDateRangeAttendanceExcel({
+        startDate,
+        endDate,
+        participants: participantsList,
+        attendanceRecords: allRecords,
+        settings,
+        sessionType: "all",
+      });
+
+      downloadExcelFile(bytes, `ESDP_Master_Attendance_History_${startDate}_to_${endDate}.xlsx`);
+      toast.success(`Exported master attendance history (${startDate} to ${endDate})`);
+    } catch (err: unknown) {
+      console.error("Master history export error:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to download history");
+    } finally {
+      setDownloadingExport(null);
+    }
   };
 
   // Execute Individual Participant Manual Action
@@ -556,6 +791,86 @@ export function AdminAttendanceManagementTab({
               >
                 <History className="h-3.5 w-3.5 text-primary" /> Audit History
               </Button>
+
+              {/* Download Attendance (Entry & Exit) Data Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={!!downloadingExport}
+                    className="h-9 gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-xs"
+                  >
+                    {downloadingExport ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="h-3.5 w-3.5" />
+                    )}
+                    <span>Download Attendance</span>
+                    <ChevronDown className="h-3 w-3 opacity-80" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel className="text-xs font-bold text-muted-foreground">
+                    Selected Date ({selectedDate})
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => handleDownloadAttendanceExcel("all_sessions")}
+                    className="text-xs gap-2 cursor-pointer font-medium"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    <div className="flex flex-col">
+                      <span>Daily Entry & Exit List (.xlsx)</span>
+                      <span className="text-[10px] text-muted-foreground">Detailed records & summary</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleDownloadAttendanceExcel("entry_only")}
+                    className="text-xs gap-2 cursor-pointer"
+                  >
+                    <Sun className="h-4 w-4 text-amber-600" />
+                    <div className="flex flex-col">
+                      <span>Entry Attendance List (.xlsx)</span>
+                      <span className="text-[10px] text-muted-foreground">Morning check-ins and timestamps</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleDownloadAttendanceExcel("exit_only")}
+                    className="text-xs gap-2 cursor-pointer"
+                  >
+                    <Sunset className="h-4 w-4 text-orange-600" />
+                    <div className="flex flex-col">
+                      <span>Exit Attendance List (.xlsx)</span>
+                      <span className="text-[10px] text-muted-foreground">Afternoon check-outs and timestamps</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs font-bold text-muted-foreground">
+                    Additional Exports
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => handleDownloadAttendanceExcel("filtered")}
+                    className="text-xs gap-2 cursor-pointer"
+                    disabled={filteredRows.length === 0}
+                  >
+                    <Download className="h-4 w-4 text-primary" />
+                    <div className="flex flex-col">
+                      <span>Export Filtered View ({filteredRows.length})</span>
+                      <span className="text-[10px] text-muted-foreground">Matches active search & session filter</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleDownloadAllHistory}
+                    className="text-xs gap-2 cursor-pointer"
+                  >
+                    <History className="h-4 w-4 text-blue-600" />
+                    <div className="flex flex-col">
+                      <span>Complete Workshop Master (.xlsx)</span>
+                      <span className="text-[10px] text-muted-foreground">All dates entry & exit data</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -672,7 +987,19 @@ export function AdminAttendanceManagementTab({
         <Card className="shadow-xs border bg-amber-500/5 border-amber-500/20">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
             <CardTitle className="text-xs font-semibold uppercase text-amber-800 dark:text-amber-400">Entry Attendance</CardTitle>
-            <Sun className="h-4 w-4 text-amber-600" />
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-amber-700 hover:text-amber-900 hover:bg-amber-100 dark:hover:bg-amber-950/50 cursor-pointer"
+                title="Download Entry Attendance List (.xlsx)"
+                disabled={!!downloadingExport}
+                onClick={() => handleDownloadAttendanceExcel("entry_only")}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+              <Sun className="h-4 w-4 text-amber-600" />
+            </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold font-display text-amber-700 dark:text-amber-300">
@@ -686,7 +1013,19 @@ export function AdminAttendanceManagementTab({
         <Card className="shadow-xs border bg-orange-500/5 border-orange-500/20">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
             <CardTitle className="text-xs font-semibold uppercase text-orange-800 dark:text-orange-400">Exit Attendance</CardTitle>
-            <Sunset className="h-4 w-4 text-orange-600" />
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-orange-700 hover:text-orange-900 hover:bg-orange-100 dark:hover:bg-orange-950/50 cursor-pointer"
+                title="Download Exit Attendance List (.xlsx)"
+                disabled={!!downloadingExport}
+                onClick={() => handleDownloadAttendanceExcel("exit_only")}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+              <Sunset className="h-4 w-4 text-orange-600" />
+            </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold font-display text-orange-700 dark:text-orange-300">
@@ -700,7 +1039,19 @@ export function AdminAttendanceManagementTab({
         <Card className="shadow-xs border bg-emerald-500/5 border-emerald-500/20">
           <CardHeader className="flex flex-row items-center justify-between pb-1.5 p-4">
             <CardTitle className="text-xs font-semibold uppercase text-emerald-800 dark:text-emerald-400">Complete (Both)</CardTitle>
-            <CheckCheck className="h-4 w-4 text-emerald-600" />
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 cursor-pointer"
+                title="Download Daily Entry & Exit Report (.xlsx)"
+                disabled={!!downloadingExport}
+                onClick={() => handleDownloadAttendanceExcel("all_sessions")}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+              <CheckCheck className="h-4 w-4 text-emerald-600" />
+            </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold font-display text-emerald-700 dark:text-emerald-300">
@@ -870,6 +1221,62 @@ export function AdminAttendanceManagementTab({
                   <SelectItem value="absent">Unmarked / Absent ({overviewStats.absentCount})</SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Quick Download Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!!downloadingExport}
+                    className="h-9 gap-1.5 text-xs font-semibold cursor-pointer border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                  >
+                    {downloadingExport ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    <span className="hidden sm:inline">Download Data</span>
+                    <span className="sm:hidden">Download</span>
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onClick={() => handleDownloadAttendanceExcel("all_sessions")}
+                    className="text-xs gap-2 cursor-pointer font-medium"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Daily Entry & Exit List</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleDownloadAttendanceExcel("entry_only")}
+                    className="text-xs gap-2 cursor-pointer"
+                  >
+                    <Sun className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Entry Attendance List</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleDownloadAttendanceExcel("exit_only")}
+                    className="text-xs gap-2 cursor-pointer"
+                  >
+                    <Sunset className="h-3.5 w-3.5 text-orange-600" />
+                    <span>Exit Attendance List</span>
+                  </DropdownMenuItem>
+                  {(searchQuery || sessionFilter !== "all") && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => handleDownloadAttendanceExcel("filtered")}
+                        className="text-xs gap-2 cursor-pointer"
+                      >
+                        <Download className="h-3.5 w-3.5 text-primary" />
+                        <span>Filtered List ({filteredRows.length})</span>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </CardHeader>
