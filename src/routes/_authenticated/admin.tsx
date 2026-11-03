@@ -156,6 +156,7 @@ function AdminPage() {
   const [fullscreenQrOpen, setFullscreenQrOpen] = useState(false);
   const [timeLeftSec, setTimeLeftSec] = useState<number>(0);
   const [generatingQr, setGeneratingQr] = useState(false);
+  const [projectorSessionType, setProjectorSessionType] = useState<"entry" | "exit">("entry");
 
   // Attendance Reports & Exports State
   const [reportSingleDate, setReportSingleDate] = useState(todayLocal());
@@ -326,7 +327,7 @@ function AdminPage() {
     const active = adminData?.activeQr;
     if (active) {
       const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const destinationUrl = `${origin}/dashboard?token=${encodeURIComponent(active.token)}&code=${encodeURIComponent(active.short_code)}`;
+      const destinationUrl = `${origin}/dashboard?token=${encodeURIComponent(active.token)}&code=${encodeURIComponent(active.short_code)}&session=${projectorSessionType}`;
       setQrDestinationUrl(destinationUrl);
 
       void QRCode.toDataURL(destinationUrl, {
@@ -351,7 +352,7 @@ function AdminPage() {
       setQrDestinationUrl("");
       setTimeLeftSec(0);
     }
-  }, [adminData?.activeQr]);
+  }, [adminData?.activeQr, projectorSessionType]);
 
   const today = todayLocal();
   const allDays = useMemo(() => {
@@ -1530,6 +1531,46 @@ function AdminPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center p-6 space-y-4">
+                {/* Session Type Segmented Controls */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full p-3 bg-muted/60 rounded-xl border">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-foreground">Projector Session Target:</span>
+                    <Badge
+                      className={
+                        projectorSessionType === "entry"
+                          ? "bg-emerald-600 text-white font-bold text-xs"
+                          : "bg-purple-700 text-white font-bold text-xs"
+                      }
+                    >
+                      {projectorSessionType === "entry" ? "ENTRY ATTENDANCE (CHECK-IN)" : "EXIT ATTENDANCE (CHECK-OUT)"}
+                    </Badge>
+                  </div>
+                  <div className="inline-flex p-1 bg-background rounded-lg border gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setProjectorSessionType("entry")}
+                      className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                        projectorSessionType === "entry"
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Entry Attendance (Check-in)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProjectorSessionType("exit")}
+                      className={`px-3.5 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                        projectorSessionType === "exit"
+                          ? "bg-purple-700 text-white shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Exit Attendance (Check-out)
+                    </button>
+                  </div>
+                </div>
+
                 {qrDataUrl && adminData?.activeQr ? (
                   <div className="flex flex-col items-center space-y-3">
                     <div className="rounded-2xl border-4 border-slate-900 bg-white p-4 shadow-xl">
@@ -3316,7 +3357,7 @@ function AdminPage() {
       <Dialog open={fullscreenQrOpen} onOpenChange={setFullscreenQrOpen}>
         <DialogContent className="max-w-[95vw] sm:max-w-4xl h-[90vh] flex flex-col justify-between p-6 sm:p-10 bg-slate-950 text-white border-slate-800">
           <DialogHeader className="border-b border-slate-800 pb-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
                 <DialogTitle className="text-2xl font-black font-display tracking-tight text-white">
                   {settings?.name || "Workshop Attendance"}
@@ -3325,17 +3366,52 @@ function AdminPage() {
                   Session Date: {today} • Scan with native camera to record attendance
                 </DialogDescription>
               </div>
-              {adminData?.activeQr && (
-                <Badge variant="outline" className="font-mono text-xs px-3 py-1 bg-emerald-950/60 text-emerald-400 border-emerald-500/50 animate-pulse">
-                  EXPIRING IN {Math.floor(timeLeftSec / 60)}m {timeLeftSec % 60}s
-                </Badge>
-              )}
+              <div className="flex items-center gap-2">
+                <div className="inline-flex p-1 bg-slate-900 rounded-lg border border-slate-700 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setProjectorSessionType("entry")}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      projectorSessionType === "entry"
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Entry Attendance
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProjectorSessionType("exit")}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                      projectorSessionType === "exit"
+                        ? "bg-purple-700 text-white shadow-xs"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Exit Attendance
+                  </button>
+                </div>
+                {adminData?.activeQr && (
+                  <Badge variant="outline" className="font-mono text-xs px-3 py-1 bg-emerald-950/60 text-emerald-400 border-emerald-500/50 animate-pulse">
+                    EXPIRING IN {Math.floor(timeLeftSec / 60)}m {timeLeftSec % 60}s
+                  </Badge>
+                )}
+              </div>
             </div>
           </DialogHeader>
 
           <div className="flex-1 flex flex-col items-center justify-center py-6 space-y-6">
             {qrDataUrl && adminData?.activeQr ? (
               <>
+                <Badge
+                  className={`text-xs sm:text-sm px-4 py-1.5 font-bold uppercase tracking-wider ${
+                    projectorSessionType === "entry"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-purple-700 text-white"
+                  }`}
+                >
+                  {projectorSessionType === "entry" ? "ENTRY ATTENDANCE (CHECK-IN)" : "EXIT ATTENDANCE (CHECK-OUT)"}
+                </Badge>
                 <div className="rounded-3xl border-8 border-slate-900 bg-white p-6 shadow-2xl">
                   <img src={qrDataUrl} alt="Projector QR Code" className="h-64 w-64 sm:h-80 sm:w-80 md:h-[360px] md:w-[360px]" />
                 </div>

@@ -73,6 +73,9 @@ export function AdminQrScannerTab({
   const [internalMode, setInternalMode] = useState<"qr" | "face">("qr");
   const activeMode = controlledMode ?? internalMode;
 
+  // Session Type: Entry Attendance (Check-in) vs Exit Attendance (Check-out)
+  const [sessionType, setSessionType] = useState<"entry" | "exit">("entry");
+
   // =========================================================================
   // OPTION A: QR SCANNER STATE
   // =========================================================================
@@ -180,7 +183,7 @@ export function AdminQrScannerTab({
       setQrConfirmedResult(null);
 
       try {
-        const res = await verifyParticipantQr({ data: { token: clean } });
+        const res = await verifyParticipantQr({ data: { token: clean, sessionType } });
         setQrVerificationResult(res);
 
         if (res.valid) {
@@ -188,7 +191,7 @@ export function AdminQrScannerTab({
             setQrConfirming(true);
             try {
               const confirmRes = await confirmParticipantAttendance({
-                data: { token: res.session.token },
+                data: { token: res.session.token, sessionType },
               });
               setQrConfirmedResult(confirmRes);
               if (confirmRes.ok) {
@@ -221,7 +224,7 @@ export function AdminQrScannerTab({
         setQrVerifying(false);
       }
     },
-    [qrVerifying, qrConfirming, stopQrCamera, onAttendanceConfirmed],
+    [qrVerifying, qrConfirming, stopQrCamera, onAttendanceConfirmed, sessionType],
   );
 
   const scanFrame = useCallback(() => {
@@ -328,7 +331,7 @@ export function AdminQrScannerTab({
 
     try {
       const res = await confirmParticipantAttendance({
-        data: { token: qrVerificationResult.session.token },
+        data: { token: qrVerificationResult.session.token, sessionType },
       });
 
       setQrConfirmedResult(res);
@@ -565,6 +568,7 @@ export function AdminQrScannerTab({
         data: {
           imageBase64,
           participantId: selectedParticipantId || undefined,
+          sessionType,
         },
       });
 
@@ -668,6 +672,58 @@ export function AdminQrScannerTab({
             </div>
           </div>
         </CardHeader>
+        <CardContent className="pt-0 pb-4 px-4 sm:px-6">
+          {/* Universal Session Type Selector: Entry Attendance vs Exit Attendance */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-muted/60 rounded-xl border">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-foreground">Attendance Target:</span>
+              <Badge
+                className={
+                  sessionType === "entry"
+                    ? "bg-emerald-600 text-white text-[11px] font-bold"
+                    : "bg-purple-700 text-white text-[11px] font-bold"
+                }
+              >
+                {sessionType === "entry" ? "Entry Attendance (Check-in)" : "Exit Attendance (Check-out)"}
+              </Badge>
+            </div>
+
+            <div className="inline-flex p-1 bg-background rounded-lg border gap-1 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionType("entry");
+                  setQrVerificationResult(null);
+                  setQrConfirmedResult(null);
+                  setFaceResult(null);
+                }}
+                className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer text-center ${
+                  sessionType === "entry"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Entry Attendance (Check-in)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionType("exit");
+                  setQrVerificationResult(null);
+                  setQrConfirmedResult(null);
+                  setFaceResult(null);
+                }}
+                className={`flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer text-center ${
+                  sessionType === "exit"
+                    ? "bg-purple-700 text-white shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Exit Attendance (Check-out)
+              </button>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
       {/* ========================================================================= */}
@@ -806,6 +862,12 @@ export function AdminQrScannerTab({
                   </div>
                 </div>
 
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
+                  <Badge className={`${sessionType === "entry" ? "bg-emerald-600" : "bg-purple-700"} text-white font-bold text-xs px-3 py-1 shadow-md`}>
+                    Scanning for: {sessionType === "entry" ? "Entry Attendance (Check-in)" : "Exit Attendance (Check-out)"}
+                  </Badge>
+                </div>
+
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
                   <Badge className="bg-black/75 text-white backdrop-blur-sm border-white/20 text-xs px-3 py-1">
                     Align attendee QR code inside the green reticle
@@ -866,10 +928,12 @@ export function AdminQrScannerTab({
 
                 <div className="space-y-1">
                   <Badge className="bg-emerald-600 text-white font-mono text-[11px] mb-1">
-                    QR VERIFIED • ATTENDANCE RECORDED
+                    QR VERIFIED • {qrConfirmedResult.sessionType === "exit" ? "EXIT ATTENDANCE" : "ENTRY ATTENDANCE"} RECORDED
                   </Badge>
                   <h2 className="font-display text-2xl font-bold text-foreground">
-                    Attendance Marked Successfully — QR Verified.
+                    {qrConfirmedResult.sessionType === "exit"
+                      ? "Exit Attendance Marked Successfully — QR Verified."
+                      : "Entry Attendance Marked Successfully — QR Verified."}
                   </h2>
                   <p className="text-sm text-muted-foreground">
                     Participant presence is officially confirmed and recorded in the database.
@@ -1209,7 +1273,10 @@ export function AdminQrScannerTab({
                   </div>
 
                   {/* Top Live Face Detection HUD Pill */}
-                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-[92%] sm:w-auto text-center pointer-events-none">
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-[92%] sm:w-auto text-center pointer-events-none flex flex-col items-center gap-1.5">
+                    <Badge className={`${sessionType === "entry" ? "bg-emerald-600" : "bg-purple-700"} text-white font-bold text-xs px-3 py-1 shadow-md`}>
+                      Target: {sessionType === "entry" ? "Entry Attendance (Check-in)" : "Exit Attendance (Check-out)"}
+                    </Badge>
                     <Badge
                       className={`text-white backdrop-blur-sm border text-xs px-3.5 py-1.5 font-medium transition-colors shadow-sm ${
                         faceDetectionState.detected

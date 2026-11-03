@@ -79,6 +79,10 @@ function DashboardPage() {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
     const code = params.get("code");
+    const session = params.get("session");
+    if (session === "exit" || session === "entry") {
+      setScanSessionType(session);
+    }
     if (token || code) {
       setScanModalOpen(true);
     }

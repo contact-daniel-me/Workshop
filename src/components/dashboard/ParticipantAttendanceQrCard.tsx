@@ -44,6 +44,9 @@ interface Props {
   todayRecord?: {
     status: string;
     checked_in_at?: string | null;
+    morning_status?: string | null;
+    afternoon_status?: string | null;
+    remarks?: string | null;
   } | null;
   workshopName?: string;
   workshopStartDate?: string;
@@ -219,15 +222,22 @@ export function ParticipantAttendanceQrCard({
     void fetchDailyQr();
   }, [fetchDailyQr]);
 
-  // Immediately re-sync when attendance is marked present
+  // Immediately re-sync when attendance changes
   useEffect(() => {
-    if (todayRecord?.status === "present" && !qrData?.alreadyMarked) {
+    if (todayRecord?.status === "present" && !qrData?.entryMarked) {
       void fetchDailyQr();
     }
-  }, [todayRecord?.status, qrData?.alreadyMarked, fetchDailyQr]);
+  }, [todayRecord?.status, todayRecord?.morning_status, todayRecord?.afternoon_status, qrData?.entryMarked, fetchDailyQr]);
 
-  const isAlreadyPresent =
-    todayRecord?.status === "present" || qrData?.code === "ALREADY_PRESENT" || qrData?.alreadyMarked;
+  const entryPresent = Boolean(
+    qrData?.entryMarked ??
+      (todayRecord &&
+        (todayRecord.morning_status === "present" ||
+          (todayRecord.status === "present" && !todayRecord.morning_status)))
+  );
+  const exitPresent = Boolean(qrData?.exitMarked ?? (todayRecord && todayRecord.afternoon_status === "present"));
+  const isFullyComplete = entryPresent && exitPresent;
+  const isAlreadyPresent = isFullyComplete || qrData?.code === "ALREADY_PRESENT";
   const isLockedUntilNoon = qrData?.code === "LOCKED_UNTIL_SESSION_TIME";
 
   const unlockTargetIso =
@@ -269,11 +279,20 @@ export function ParticipantAttendanceQrCard({
           </div>
 
           {/* Today's Status Badge */}
-          <div className="flex items-center gap-2">
-            {isAlreadyPresent ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            {isFullyComplete ? (
               <Badge className="bg-emerald-600 text-white gap-1.5 px-3 py-1 font-semibold text-xs shadow-2xs">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Present Today
+                <CheckCircle2 className="h-3.5 w-3.5" /> Both Completed (Present)
               </Badge>
+            ) : entryPresent ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Badge className="bg-emerald-600 text-white gap-1 px-2.5 py-0.5 font-semibold text-xs">
+                  <CheckCircle2 className="h-3 w-3" /> Entry Recorded
+                </Badge>
+                <Badge variant="outline" className="border-purple-400 bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 gap-1 px-2.5 py-0.5 font-semibold text-xs animate-pulse">
+                  <Clock className="h-3 w-3" /> Exit Pending
+                </Badge>
+              </div>
             ) : isLockedUntilNoon ? (
               <Badge variant="outline" className="border-primary/40 bg-primary/5 text-primary gap-1.5 px-3 py-1 font-semibold text-xs">
                 <Clock className="h-3.5 w-3.5 text-primary" /> Opens at 12:00 AM
@@ -355,14 +374,18 @@ export function ParticipantAttendanceQrCard({
 
                 {/* Today's status alert / callout */}
                 <div className="pt-1">
-                  {isAlreadyPresent ? (
+                  {isFullyComplete ? (
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 text-xs font-medium">
                       <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                       <span>
-                        Verified Present today
-                        {qrData?.checkedInAt
-                          ? ` at ${new Date(qrData.checkedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                          : ""}.
+                        Both Entry & Exit verified present for today. Full attendance recorded!
+                      </span>
+                    </div>
+                  ) : entryPresent ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-purple-500/10 text-purple-800 dark:text-purple-300 border border-purple-500/20 text-xs font-medium">
+                      <Clock className="h-4 w-4 text-purple-600 shrink-0" />
+                      <span>
+                        Entry attendance recorded. Present QR code below to record <strong>Exit Attendance (Check-out)</strong>.
                       </span>
                     </div>
                   ) : isLockedUntilNoon ? (
@@ -373,7 +396,7 @@ export function ParticipantAttendanceQrCard({
                   ) : isWorkshopDay ? (
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20 text-xs font-medium">
                       <Clock className="h-4 w-4 shrink-0" />
-                      <span>Present this QR code to the workshop administrator to check in today.</span>
+                      <span>Present this QR code to the workshop administrator to check in (Entry Attendance).</span>
                     </div>
                   ) : (
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-muted text-muted-foreground border text-xs">
@@ -469,16 +492,16 @@ export function ParticipantAttendanceQrCard({
           {/* RIGHT COLUMN: Primary Attendance QR Code Card (Strongest Visual Emphasis) */}
           <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
             <div className="flex flex-col items-center justify-center p-4 sm:p-5 bg-muted/20 rounded-2xl border-2 border-primary/20 w-full sm:w-[320px] shrink-0 space-y-3 shadow-xs">
-              {isAlreadyPresent ? (
-                /* Verified Present State */
+              {isFullyComplete ? (
+                /* Verified Both Entry and Exit Present State */
                 <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
                   <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center shadow-inner">
                     <CheckCircle2 className="h-9 w-9" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="font-display text-lg font-bold text-foreground">Attendance Recorded!</h4>
+                    <h4 className="font-display text-lg font-bold text-foreground">Attendance Completed!</h4>
                     <p className="text-xs text-muted-foreground">
-                      You are marked <strong className="text-emerald-600">PRESENT</strong> for today's session.
+                      Both <strong className="text-emerald-600">Entry</strong> and <strong className="text-purple-600">Exit</strong> attendance are recorded for today.
                     </p>
                   </div>
                   {!isLastWorkshopDay && (
@@ -556,8 +579,8 @@ export function ParticipantAttendanceQrCard({
                         className="group cursor-pointer focus:outline-hidden"
                         title="Attendee pass — Click to see how attendance works"
                       >
-                        <Badge className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono text-[10px] tracking-wider uppercase shadow-xs px-2.5 py-0.5 whitespace-nowrap gap-1 transition-transform group-hover:scale-105">
-                          <span>ATTENDEE PASS</span>
+                        <Badge className={`${entryPresent ? "bg-purple-700 hover:bg-purple-800" : "bg-primary hover:bg-primary/90"} text-white font-mono text-[10px] tracking-wider uppercase shadow-xs px-2.5 py-0.5 whitespace-nowrap gap-1 transition-transform group-hover:scale-105`}>
+                          <span>{entryPresent ? "EXIT PASS (CHECK-OUT)" : "ENTRY PASS (CHECK-IN)"}</span>
                           <HelpCircle className="h-2.5 w-2.5 opacity-80" />
                         </Badge>
                       </button>

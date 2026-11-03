@@ -488,4 +488,179 @@ describe("Admin Attendance Console: Dual Independent Verification (QR & Face)", 
   });
 });
 
+describe("QR Code Verification: Entry and Exit Attendance Workflows", () => {
+  interface AttendanceRecord {
+    id: string;
+    user_id: string;
+    day_date: string;
+    status: string;
+    morning_status: string | null;
+    afternoon_status: string | null;
+    remarks: string;
+  }
+
+  function simulateQrVerificationAndConfirmation(
+    sessionType: "entry" | "exit" | "both",
+    existingRecord: AttendanceRecord | null,
+    nowIso: string = new Date().toISOString()
+  ): { ok: boolean; resultCode: string; record: AttendanceRecord | null; message: string } {
+    const hasEntry = Boolean(
+      existingRecord &&
+        (existingRecord.morning_status === "present" ||
+          (existingRecord.status === "present" && !existingRecord.morning_status))
+    );
+    const hasExit = Boolean(existingRecord && existingRecord.afternoon_status === "present");
+
+    if (sessionType === "exit") {
+      if (!hasEntry) {
+        return {
+          ok: false,
+          resultCode: "FAILED",
+          record: existingRecord,
+          message: "Entry attendance is missing for today. Participant must mark Entry attendance before Exit.",
+        };
+      }
+      if (hasExit) {
+        return {
+          ok: false,
+          resultCode: "ALREADY_MARKED",
+          record: existingRecord,
+          message: "Exit attendance has already been recorded for this participant today.",
+        };
+      }
+      return {
+        ok: true,
+        resultCode: "CONFIRMED",
+        record: {
+          ...existingRecord!,
+          afternoon_status: "present",
+          status: "present",
+          remarks: `${existingRecord?.remarks || ""} | EXIT_AT:${nowIso}`,
+        },
+        message: "Exit attendance marked successfully",
+      };
+    }
+
+    if (sessionType === "entry") {
+      if (hasEntry) {
+        return {
+          ok: false,
+          resultCode: "ALREADY_MARKED",
+          record: existingRecord,
+          message: "Entry attendance has already been recorded for this participant today.",
+        };
+      }
+      if (existingRecord) {
+        return {
+          ok: true,
+          resultCode: "CONFIRMED",
+          record: {
+            ...existingRecord,
+            morning_status: "present",
+            status: "present",
+            remarks: `${existingRecord.remarks} | ENTRY_AT:${nowIso}`,
+          },
+          message: "Entry attendance marked successfully",
+        };
+      }
+      return {
+        ok: true,
+        resultCode: "CONFIRMED",
+        record: {
+          id: "att-new",
+          user_id: "user-1",
+          day_date: "2026-11-03",
+          status: "present",
+          morning_status: "present",
+          afternoon_status: null,
+          remarks: `Verified via Admin QR Scanner | ENTRY_AT:${nowIso}`,
+        },
+        message: "Entry attendance marked successfully",
+      };
+    }
+
+    return {
+      ok: true,
+      resultCode: "CONFIRMED",
+      record: {
+        id: existingRecord?.id || "att-both",
+        user_id: "user-1",
+        day_date: "2026-11-03",
+        status: "present",
+        morning_status: "present",
+        afternoon_status: "present",
+        remarks: "Verified via Admin QR Scanner",
+      },
+      message: "Attendance marked successfully",
+    };
+  }
+
+  it("marks Entry attendance successfully when no prior record exists", () => {
+    const res = simulateQrVerificationAndConfirmation("entry", null);
+    expect(res.ok).toBe(true);
+    expect(res.resultCode).toBe("CONFIRMED");
+    expect(res.record?.morning_status).toBe("present");
+    expect(res.record?.afternoon_status).toBeNull();
+    expect(res.record?.status).toBe("present");
+  });
+
+  it("rejects duplicate Entry attendance with ALREADY_MARKED", () => {
+    const existing: AttendanceRecord = {
+      id: "att-1",
+      user_id: "user-1",
+      day_date: "2026-11-03",
+      status: "present",
+      morning_status: "present",
+      afternoon_status: null,
+      remarks: "Verified via Admin QR Scanner",
+    };
+    const res = simulateQrVerificationAndConfirmation("entry", existing);
+    expect(res.ok).toBe(false);
+    expect(res.resultCode).toBe("ALREADY_MARKED");
+    expect(res.message).toContain("Entry attendance has already been recorded");
+  });
+
+  it("blocks Exit attendance if Entry attendance was never marked", () => {
+    const res = simulateQrVerificationAndConfirmation("exit", null);
+    expect(res.ok).toBe(false);
+    expect(res.resultCode).toBe("FAILED");
+    expect(res.message).toContain("Entry attendance is missing for today");
+  });
+
+  it("records Exit attendance when Entry attendance is present", () => {
+    const existing: AttendanceRecord = {
+      id: "att-1",
+      user_id: "user-1",
+      day_date: "2026-11-03",
+      status: "present",
+      morning_status: "present",
+      afternoon_status: null,
+      remarks: "ENTRY_AT:2026-11-03T09:00:00.000Z",
+    };
+    const res = simulateQrVerificationAndConfirmation("exit", existing);
+    expect(res.ok).toBe(true);
+    expect(res.resultCode).toBe("CONFIRMED");
+    expect(res.record?.morning_status).toBe("present");
+    expect(res.record?.afternoon_status).toBe("present");
+    expect(res.record?.remarks).toContain("EXIT_AT:");
+  });
+
+  it("rejects duplicate Exit attendance with ALREADY_MARKED", () => {
+    const existing: AttendanceRecord = {
+      id: "att-1",
+      user_id: "user-1",
+      day_date: "2026-11-03",
+      status: "present",
+      morning_status: "present",
+      afternoon_status: "present",
+      remarks: "ENTRY_AT:... | EXIT_AT:...",
+    };
+    const res = simulateQrVerificationAndConfirmation("exit", existing);
+    expect(res.ok).toBe(false);
+    expect(res.resultCode).toBe("ALREADY_MARKED");
+    expect(res.message).toContain("Exit attendance has already been recorded");
+  });
+});
+
+
 

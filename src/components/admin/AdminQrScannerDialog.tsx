@@ -50,6 +50,7 @@ export function AdminQrScannerDialog({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [manualCode, setManualCode] = useState("");
+  const [sessionType, setSessionType] = useState<"entry" | "exit">("entry");
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<QrVerificationResult | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -90,7 +91,7 @@ export function AdminQrScannerDialog({
       setConfirmedResult(null);
 
       try {
-        const res = await verifyParticipantQr({ data: { token: clean } });
+        const res = await verifyParticipantQr({ data: { token: clean, sessionType } });
         setVerificationResult(res);
 
         if (res.valid) {
@@ -98,7 +99,7 @@ export function AdminQrScannerDialog({
             setIsConfirming(true);
             try {
               const confirmRes = await confirmParticipantAttendance({
-                data: { token: res.session.token },
+                data: { token: res.session.token, sessionType },
               });
               setConfirmedResult(confirmRes);
               if (confirmRes.ok) {
@@ -145,7 +146,7 @@ export function AdminQrScannerDialog({
         setIsVerifying(false);
       }
     },
-    [isVerifying, isConfirming, stopCamera, onAttendanceConfirmed],
+    [isVerifying, isConfirming, stopCamera, onAttendanceConfirmed, sessionType],
   );
 
   // Scan frame loop using jsQR
@@ -265,7 +266,7 @@ export function AdminQrScannerDialog({
 
     try {
       const res = await confirmParticipantAttendance({
-        data: { token: verificationResult.session.token },
+        data: { token: verificationResult.session.token, sessionType },
       });
 
       setConfirmedResult(res);
@@ -354,6 +355,55 @@ export function AdminQrScannerDialog({
           </div>
         </DialogHeader>
 
+        {/* Attendance Target Segmented Selector: Entry Attendance vs Exit Attendance */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 bg-muted/60 rounded-xl border">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-foreground">Attendance Target:</span>
+            <Badge
+              className={
+                sessionType === "entry"
+                  ? "bg-emerald-600 text-white text-[10px] font-bold"
+                  : "bg-purple-700 text-white text-[10px] font-bold"
+              }
+            >
+              {sessionType === "entry" ? "Entry Attendance (Check-in)" : "Exit Attendance (Check-out)"}
+            </Badge>
+          </div>
+
+          <div className="inline-flex p-1 bg-background rounded-lg border gap-1 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setSessionType("entry");
+                setVerificationResult(null);
+                setConfirmedResult(null);
+              }}
+              className={`flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer text-center ${
+                sessionType === "entry"
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Entry Attendance (Check-in)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSessionType("exit");
+                setVerificationResult(null);
+                setConfirmedResult(null);
+              }}
+              className={`flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer text-center ${
+                sessionType === "exit"
+                  ? "bg-purple-700 text-white shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Exit Attendance (Check-out)
+            </button>
+          </div>
+        </div>
+
         <div className="pt-1 space-y-4">
           {/* ========================================================================= */}
           {/* STATE 1: ATTENDANCE CONFIRMED SUCCESS */}
@@ -367,10 +417,12 @@ export function AdminQrScannerDialog({
 
                 <div className="space-y-1">
                   <Badge className="bg-emerald-600 text-white font-mono text-[11px] mb-1">
-                    QR VERIFIED • ATTENDANCE RECORDED
+                    QR VERIFIED • {confirmedResult.sessionType === "exit" ? "EXIT ATTENDANCE" : "ENTRY ATTENDANCE"} RECORDED
                   </Badge>
                   <h2 className="font-display text-2xl font-bold text-foreground">
-                    Attendance Marked Successfully!
+                    {confirmedResult.sessionType === "exit"
+                      ? "Exit Attendance Marked Successfully!"
+                      : "Entry Attendance Marked Successfully!"}
                   </h2>
                   <p className="text-sm text-muted-foreground">
                     Participant presence is officially confirmed for today's session.
@@ -575,6 +627,13 @@ export function AdminQrScannerDialog({
                         <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-emerald-400 -mb-1 -mr-1 rounded-br" />
                         <div className="absolute inset-x-2 top-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-pulse" />
                       </div>
+                    </div>
+
+                    {/* Top Status Pill: Active Target */}
+                    <div className="absolute top-3 left-3 z-10">
+                      <Badge className={`${sessionType === "entry" ? "bg-emerald-600" : "bg-purple-700"} text-white font-bold text-xs px-2.5 py-1 shadow-md`}>
+                        {sessionType === "entry" ? "Entry (Check-in)" : "Exit (Check-out)"}
+                      </Badge>
                     </div>
 
                     {/* Top Right Controls: Flip Camera */}
