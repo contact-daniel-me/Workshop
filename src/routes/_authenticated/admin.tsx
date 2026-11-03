@@ -69,6 +69,7 @@ import {
   Copy,
   Download,
   FileText,
+  Layers,
 } from "lucide-react";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { AdminAttendanceManagementTab } from "@/components/admin/AdminAttendanceManagementTab";
