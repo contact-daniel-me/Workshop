@@ -535,66 +535,6 @@ export function AdminFaceRecognitionDialog({
                   </Button>
                 </div>
               </div>
-
-              {/* Matching Scope & Targeted Selection */}
-              <div className="p-3 rounded-xl bg-muted/40 border text-xs space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="font-semibold text-muted-foreground flex items-center gap-1.5">
-                    <Target className="h-3.5 w-3.5 text-purple-600" />
-                    Matching Mode:
-                  </span>
-                  <div className="grid grid-cols-2 gap-1 p-0.5 bg-muted rounded-lg border">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedParticipantId("")}
-                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                        !selectedParticipantId
-                          ? "bg-purple-700 text-white shadow-xs"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Auto Match (1-to-N)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (approvedParticipants.length && !selectedParticipantId) {
-                          setSelectedParticipantId(approvedParticipants[0]?.id || "");
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                        selectedParticipantId
-                          ? "bg-purple-700 text-white shadow-xs"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Specific Attendee (1-to-1)
-                    </button>
-                  </div>
-                </div>
-
-                {selectedParticipantId !== "" && (
-                  <div className="grid gap-2 sm:grid-cols-2 pt-1 border-t">
-                    <Input
-                      placeholder="Search attendee by name or code…"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="text-xs font-mono h-8"
-                    />
-                    <select
-                      value={selectedParticipantId}
-                      onChange={(e) => setSelectedParticipantId(e.target.value)}
-                      className="text-xs font-medium rounded-md border bg-background px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-purple-600 w-full h-8"
-                    >
-                      {filteredParticipants.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.full_name} ({p.participant_code})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
             </div>
           ) : (
             /* ========================================================================= */
