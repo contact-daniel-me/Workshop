@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { adminChangeParticipantPassword } from "@/lib/admin.functions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,18 @@ export function ChangeParticipantPasswordDialog({
 
   const cleanPhone = participant?.phone ? normalizePhone(participant.phone) : "";
   const autoDefaultPassword = generateDefaultStudentPassword(participant?.full_name || "User", cleanPhone);
+
+  // Automatically pre-populate with default formula password whenever dialog opens for a participant
+  useEffect(() => {
+    if (participant && open) {
+      const p = participant.phone ? normalizePhone(participant.phone) : "";
+      const formula = generateDefaultStudentPassword(participant.full_name || "User", p);
+      setNewPassword(formula);
+      setConfirmPassword(formula);
+      setGeneratedTemp(formula);
+      setShowPassword(true);
+    }
+  }, [participant, open]);
 
   const applyFormulaPassword = () => {
     setNewPassword(autoDefaultPassword);
@@ -238,11 +250,11 @@ export function ChangeParticipantPasswordDialog({
             <div className="relative">
               <Input
                 type={showPassword ? "text" : "password"}
-                placeholder="Enter at least 8 characters"
+                placeholder="Enter at least 6 characters"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                minLength={8}
+                minLength={6}
                 className="text-xs pr-10"
               />
             </div>
@@ -257,7 +269,7 @@ export function ChangeParticipantPasswordDialog({
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              minLength={8}
+              minLength={6}
               className="text-xs"
             />
           </div>
@@ -268,7 +280,7 @@ export function ChangeParticipantPasswordDialog({
             <div className="flex items-center gap-1.5">
               <span className={`h-1.5 w-1.5 rounded-full ${lengthValid ? "bg-emerald-500" : "bg-muted-foreground"}`} />
               <span className={lengthValid ? "text-emerald-600 font-medium" : "text-muted-foreground"}>
-                Minimum 8 characters
+                Minimum 6 characters
               </span>
             </div>
             <div className="flex items-center gap-1.5">

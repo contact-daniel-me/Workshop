@@ -2284,6 +2284,7 @@ function AdminPage() {
             onOpenChange={(open) => !open && setPasswordTargetUser(null)}
             participant={passwordTargetUser}
             onSuccess={() => {
+              void qc.invalidateQueries({ queryKey: ["admin_data"] });
               void refetch();
             }}
           />
@@ -2489,6 +2490,7 @@ function AdminPage() {
             }}
             participant={editTargetUser}
             onSuccess={() => {
+              void qc.invalidateQueries({ queryKey: ["admin_data"] });
               void refetch().then((res) => {
                 if (selectedParticipant && editTargetUser && selectedParticipant.id === editTargetUser.id) {
                   const updated = res.data?.participantRows.find((x) => x.id === editTargetUser.id);

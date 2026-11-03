@@ -791,7 +791,7 @@ export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
     // 2. Fetch target profile
     const { data: profile } = await supabaseAdmin
       .from("profiles")
-      .select("id, full_name, participant_code")
+      .select("id, full_name, phone, participant_code")
       .eq("id", data.targetUserId)
       .maybeSingle();
 
@@ -814,10 +814,15 @@ export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
 
     // 4. Update password via Supabase Auth Admin API
     const saltedPassword = normalizeAppPassword(data.newPassword);
-    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(data.targetUserId, {
+    const authUpdatePayload: Record<string, unknown> = {
       password: saltedPassword,
       email_confirm: true,
-    });
+    };
+    if (profile.phone && normalizePhone(profile.phone).length === 10) {
+      authUpdatePayload.email = phoneToAuthEmail(profile.phone);
+    }
+
+    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(data.targetUserId, authUpdatePayload);
 
     if (updateErr) {
       // Record failure audit log
@@ -1036,13 +1041,14 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
       },
     };
 
-    if (data.newPassword) {
-      authUpdatePayload.password = normalizeAppPassword(data.newPassword);
+    if (finalPhone && normalizePhone(finalPhone).length === 10) {
+      authUpdatePayload.email = phoneToAuthEmail(finalPhone);
+    } else if (finalEmail && finalEmail.includes("@")) {
+      authUpdatePayload.email = finalEmail.toLowerCase();
     }
 
-    // If phone changed, update auth email identifier
-    if (data.phone && data.phone !== currentProfile.phone) {
-      authUpdatePayload.email = phoneToAuthEmail(finalPhone);
+    if (data.newPassword) {
+      authUpdatePayload.password = normalizeAppPassword(data.newPassword);
     }
 
     const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(

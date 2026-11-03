@@ -173,3 +173,4 @@ export function AdminOverviewCharts({ dailyTrendData, distributionData, totalReg
     </div>
   );
 }
+

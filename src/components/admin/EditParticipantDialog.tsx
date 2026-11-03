@@ -35,6 +35,8 @@ import {
   Sparkles,
   Camera,
   Trash2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { adminUpdateParticipantDetails } from "@/lib/admin.functions";
 import { downloadParticipantCredentialsPdf } from "@/lib/credential-pdf";
@@ -78,8 +80,10 @@ export function EditParticipantDialog({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
 
-  // Password state: if empty, existing password is kept. If filled, updates to that password.
+  // Password management state: defaults to "formula" so saving always ensures valid formula password in Auth
+  const [passwordMode, setPasswordMode] = useState<"formula" | "custom" | "keep">("formula");
   const [customPassword, setCustomPassword] = useState("");
+  const [showCustomPassword, setShowCustomPassword] = useState(false);
 
   // Submission & Post-save state
   const [saving, setSaving] = useState(false);
@@ -94,6 +98,7 @@ export function EditParticipantDialog({
     verificationStatus: string;
     photoUrl: string | null;
     rawPassword?: string;
+    passwordMode: "formula" | "custom" | "keep";
   } | null>(null);
 
   // Initialize form when participant changes
@@ -109,7 +114,9 @@ export function EditParticipantDialog({
       setPhotoFile(null);
       setPhotoPreview(participant.photo_url || null);
       setRemovePhoto(false);
+      setPasswordMode("formula");
       setCustomPassword("");
+      setShowCustomPassword(false);
       setSavedData(null);
     }
   }, [participant, open]);
@@ -146,12 +153,20 @@ export function EditParticipantDialog({
       return;
     }
 
-    const cleanPassword = customPassword.trim();
-    if (cleanPassword && cleanPassword.length < 6) {
-      toast.error("New password must be at least 6 characters.");
-      return;
+    let passwordToSend: string | undefined = undefined;
+    if (passwordMode === "formula") {
+      passwordToSend = autoDefaultPassword;
+    } else if (passwordMode === "custom") {
+      const cleanPassword = customPassword.trim();
+      if (!cleanPassword || cleanPassword.length < 6) {
+        toast.error("Custom password must be at least 6 characters.");
+        return;
+      }
+      passwordToSend = cleanPassword;
+    } else {
+      // "keep" -> preserve existing password without updating
+      passwordToSend = undefined;
     }
-    const passwordToSend = cleanPassword || undefined;
 
     setSaving(true);
     try {
@@ -178,7 +193,11 @@ export function EditParticipantDialog({
         throw new Error("Failed to update participant.");
       }
 
-      toast.success(`Participant ${res.participant.participantCode} updated successfully!`);
+      if (passwordToSend) {
+        toast.success(`Participant ${res.participant.participantCode} updated (Password: ${passwordToSend})!`);
+      } else {
+        toast.success(`Participant ${res.participant.participantCode} updated successfully!`);
+      }
 
       // Set saved data to allow instant updated PDF download
       setSavedData({
@@ -190,6 +209,7 @@ export function EditParticipantDialog({
         verificationStatus: res.participant.verificationStatus,
         photoUrl: res.participant.photoUrl ?? photoPreview,
         rawPassword: passwordToSend,
+        passwordMode,
       });
 
       onSuccess?.();
@@ -210,7 +230,8 @@ export function EditParticipantDialog({
       phone: cleanPhone || phone,
       verificationStatus,
       photoUrl: photoPreview,
-      rawPassword: customPassword.trim() || autoDefaultPassword,
+      rawPassword: passwordMode === "formula" ? autoDefaultPassword : (passwordMode === "custom" ? customPassword.trim() : undefined),
+      passwordMode,
     };
 
     setDownloadingPdf(true);
@@ -220,7 +241,7 @@ export function EditParticipantDialog({
         participantCode: dataToPrint.participantCode,
         email: dataToPrint.email,
         phone: dataToPrint.phone,
-        rawPassword: dataToPrint.rawPassword,
+        rawPassword: dataToPrint.rawPassword || autoDefaultPassword,
         verificationStatus: dataToPrint.verificationStatus,
         photoUrl: dataToPrint.photoUrl,
         portalUrl: typeof window !== "undefined" ? `${window.location.origin}/auth` : "/auth",
@@ -240,7 +261,9 @@ export function EditParticipantDialog({
     const pPhone = savedData?.phone || cleanPhone || phone;
     const pEmail = savedData?.email || email;
     const pStatus = savedData?.verificationStatus || verificationStatus;
-    const pPassword = savedData?.rawPassword || customPassword.trim() || autoDefaultPassword;
+    const pPassword = savedData?.rawPassword
+      ? savedData.rawPassword
+      : (savedData?.passwordMode === "keep" ? "(Existing Password Preserved)" : autoDefaultPassword);
 
     const text = [
       `Event Management Portal — Updated Account Credentials`,
@@ -248,7 +271,7 @@ export function EditParticipantDialog({
       `Participant ID: ${pCode}`,
       `Mobile Number: ${pPhone}`,
       `Email Address: ${pEmail}`,
-      `Default Password: ${pPassword}`,
+      `Login Password: ${pPassword}`,
       `Status: ${pStatus.toUpperCase()}`,
       `Login URL: ${window.location.origin}/auth`,
     ].join("\n");
@@ -387,59 +410,120 @@ export function EditParticipantDialog({
               </div>
 
               {/* Password Management */}
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20 p-3.5 space-y-2.5">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20 p-3.5 space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-300">
-                    <Key className="h-3.5 w-3.5 text-emerald-600" />
+                    <Key className="h-4 w-4 text-emerald-600" />
                     <span>Participant Login Password</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button
+
+                  {/* Mode Selector Segmented Tabs */}
+                  <div className="inline-flex items-center rounded-lg bg-emerald-100/70 dark:bg-emerald-900/40 p-0.5 text-xs border border-emerald-200 dark:border-emerald-800">
+                    <button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCustomPassword(autoDefaultPassword)}
-                      className="h-6 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100 border-emerald-300 bg-white dark:bg-slate-900 cursor-pointer"
+                      onClick={() => setPasswordMode("formula")}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                        passwordMode === "formula"
+                          ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
                     >
-                      Use Formula ({autoDefaultPassword})
-                    </Button>
-                    {customPassword && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setCustomPassword("")}
-                        className="h-6 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
-                      >
-                        Keep Existing
-                      </Button>
-                    )}
+                      Formula ({autoDefaultPassword})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPasswordMode("custom")}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                        passwordMode === "custom"
+                          ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Custom
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPasswordMode("keep")}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                        passwordMode === "keep"
+                          ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Keep Existing
+                    </button>
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Input
-                    type="text"
-                    value={customPassword}
-                    onChange={(e) => setCustomPassword(e.target.value)}
-                    placeholder="Leave blank to keep existing password"
-                    className="font-mono text-sm bg-card"
-                  />
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
-                    <span>
-                      Formula: <strong>{autoDefaultPassword}</strong> (1st 4 letters of name + 1st 4 digits of mobile)
-                    </span>
-                    {customPassword ? (
-                      <span className="text-emerald-600 font-semibold font-mono">
-                        ✓ Password will update on Save
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground italic">
-                        Existing password preserved
-                      </span>
-                    )}
+                {/* Active Mode Body */}
+                {passwordMode === "formula" && (
+                  <div className="rounded-lg bg-card p-3 border border-emerald-200/60 dark:border-emerald-800/60 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Standard Formula Password:</span>
+                      <Badge className="bg-emerald-600 text-white text-[10px] hover:bg-emerald-600">
+                        ✓ Active on Save
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <code className="font-mono text-base font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-200 dark:border-emerald-800 tracking-wide">
+                        {autoDefaultPassword}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(autoDefaultPassword);
+                          toast.success(`Copied "${autoDefaultPassword}" to clipboard!`);
+                        }}
+                        className="h-7 text-xs gap-1 cursor-pointer"
+                      >
+                        <Copy className="h-3 w-3" /> Copy
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Formula: 1st 4 letters of name + 1st 4 digits of mobile. Clicking <strong>Save Changes</strong> updates Supabase Auth directly with this password.
+                    </p>
                   </div>
-                </div>
+                )}
+
+                {passwordMode === "custom" && (
+                  <div className="rounded-lg bg-card p-3 border space-y-2">
+                    <Label className="text-xs font-semibold flex items-center justify-between">
+                      <span>Set Custom Password</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomPassword(!showCustomPassword)}
+                        className="text-[11px] text-primary hover:underline font-medium"
+                      >
+                        {showCustomPassword ? "Hide" : "Show"}
+                      </button>
+                    </Label>
+                    <Input
+                      type={showCustomPassword ? "text" : "password"}
+                      value={customPassword}
+                      onChange={(e) => setCustomPassword(e.target.value)}
+                      placeholder="Enter at least 6 characters"
+                      className="font-mono text-sm"
+                      minLength={6}
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>Minimum 6 characters</span>
+                      {customPassword.length >= 6 ? (
+                        <span className="text-emerald-600 font-semibold font-mono">✓ Ready to save</span>
+                      ) : (
+                        <span className="text-amber-600 font-mono">Min 6 chars required</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {passwordMode === "keep" && (
+                  <div className="rounded-lg bg-muted/40 p-2.5 border text-xs text-muted-foreground flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span>Participant's existing password in Supabase Auth will remain unchanged when saving.</span>
+                  </div>
+                )}
               </div>
 
               {/* Remarks */}
@@ -523,12 +607,25 @@ export function EditParticipantDialog({
                 <div className="col-span-2 pt-1 border-t">
                   <span className="text-muted-foreground block text-[10px]">Login Password:</span>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <code className="font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-xs border border-emerald-200">
-                      {savedData.rawPassword || autoDefaultPassword}
-                    </code>
-                    <Badge variant="outline" className="text-[10px] font-mono text-emerald-700 border-emerald-200">
-                      {savedData.rawPassword ? "UPDATED" : "FORMULA DEFAULT"}
-                    </Badge>
+                    {savedData.rawPassword ? (
+                      <>
+                        <code className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-xs border border-emerald-200">
+                          {savedData.rawPassword}
+                        </code>
+                        <Badge variant="outline" className="text-[10px] font-mono text-emerald-700 border-emerald-200">
+                          {savedData.passwordMode === "formula" ? "UPDATED TO FORMULA" : "CUSTOM PASSWORD UPDATED"}
+                        </Badge>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs text-muted-foreground italic font-medium">
+                          Existing Password Preserved
+                        </span>
+                        <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                          UNCHANGED
+                        </Badge>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
