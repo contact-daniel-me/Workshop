@@ -662,5 +662,53 @@ describe("QR Code Verification: Entry and Exit Attendance Workflows", () => {
   });
 });
 
+describe("parseAndExtractQrToken Payload Sanitization & Extraction", () => {
+  it("extracts clean token from raw hex string", async () => {
+    const { parseAndExtractQrToken } = await import("./attendance");
+    const raw = "5e36977f9fb3ad21ffca679662e08e9385aa2b8fc2e6613917b215f541e0b72a";
+    const res = parseAndExtractQrToken(raw);
+    expect(res.token).toBe(raw);
+  });
+
+  it("extracts short code string and preserves uppercase code", async () => {
+    const { parseAndExtractQrToken } = await import("./attendance");
+    const res = parseAndExtractQrToken("  lknwz7  ");
+    expect(res.token).toBe("lknwz7");
+  });
+
+  it("extracts token and sessionType from full projector QR URL", async () => {
+    const { parseAndExtractQrToken } = await import("./attendance");
+    const url = "https://event.growiota.in/dashboard?token=5e36977f9fb3ad21ffca679662e08e9385aa2b8fc2e6613917b215f541e0b72a&code=LKNWZ7&session=exit";
+    const res = parseAndExtractQrToken(url);
+    expect(res.token).toBe("5e36977f9fb3ad21ffca679662e08e9385aa2b8fc2e6613917b215f541e0b72a");
+    expect(res.sessionType).toBe("exit");
+  });
+
+  it("extracts short code from checkin URL when token param is absent", async () => {
+    const { parseAndExtractQrToken } = await import("./attendance");
+    const url = "https://event.growiota.in/checkin?code=LKNWZ7";
+    const res = parseAndExtractQrToken(url);
+    expect(res.token).toBe("LKNWZ7");
+  });
+
+  it("extracts token from JSON QR payload", async () => {
+    const { parseAndExtractQrToken } = await import("./attendance");
+    const jsonStr = JSON.stringify({
+      token: "5e36977f9fb3ad21ffca679662e08e9385aa2b8fc2e6613917b215f541e0b72a",
+      sessionType: "entry",
+    });
+    const res = parseAndExtractQrToken(jsonStr);
+    expect(res.token).toBe("5e36977f9fb3ad21ffca679662e08e9385aa2b8fc2e6613917b215f541e0b72a");
+    expect(res.sessionType).toBe("entry");
+  });
+
+  it("handles token= and code= prefixed strings and stripped quotes", async () => {
+    const { parseAndExtractQrToken } = await import("./attendance");
+    expect(parseAndExtractQrToken('"token=abc123xyz"').token).toBe("abc123xyz");
+    expect(parseAndExtractQrToken("'code=LKNWZ7'").token).toBe("LKNWZ7");
+  });
+});
+
+
 
 

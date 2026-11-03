@@ -471,3 +471,98 @@ export function normalizePhone(p: string) {
   else if (digits.startsWith("0") && digits.length === 11) digits = digits.slice(1);
   return digits;
 }
+
+/**
+ * Robustly parses and extracts attendance QR token and session type from
+ * raw tokens, JSON strings, or full destination URLs (e.g. from projector QR or mobile scanner).
+ */
+export function parseAndExtractQrToken(raw: string): {
+  token: string;
+  sessionType?: "entry" | "exit" | "both";
+} {
+  let clean = String(raw ?? "").trim();
+  let sessionType: "entry" | "exit" | "both" | undefined;
+
+  if (!clean) return { token: "" };
+
+  // 1. JSON QR payload support
+  if (clean.startsWith("{") && clean.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(clean);
+      if (parsed.token || parsed.code || parsed.shortCode) {
+        clean = String(parsed.token || parsed.code || parsed.shortCode).trim();
+      }
+      if (
+        parsed.sessionType === "entry" ||
+        parsed.sessionType === "exit" ||
+        parsed.sessionType === "both"
+      ) {
+        sessionType = parsed.sessionType;
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  // 2. URL payload support (e.g., https://domain.com/dashboard?token=...&code=...)
+  if (
+    clean.includes("?") ||
+    clean.startsWith("http://") ||
+    clean.startsWith("https://") ||
+    clean.startsWith("/")
+  ) {
+    try {
+      const parsedUrl = clean.startsWith("http")
+        ? new URL(clean)
+        : new URL(clean, "https://event.growiota.in");
+      const urlToken =
+        parsedUrl.searchParams.get("token") || parsedUrl.searchParams.get("t");
+      const urlCode =
+        parsedUrl.searchParams.get("code") || parsedUrl.searchParams.get("c");
+      const urlSession =
+        parsedUrl.searchParams.get("session") ||
+        parsedUrl.searchParams.get("sessionType");
+
+      if (
+        urlSession === "entry" ||
+        urlSession === "exit" ||
+        urlSession === "both"
+      ) {
+        sessionType = urlSession;
+      }
+
+      if (urlToken) {
+        clean = urlToken.trim();
+      } else if (urlCode) {
+        clean = urlCode.trim();
+      }
+    } catch {
+      const tokenMatch = clean.match(/[?&]token=([^&#\s]+)/i);
+      const codeMatch = clean.match(/[?&]code=([^&#\s]+)/i);
+      const sessionMatch = clean.match(/[?&]session(?:Type)?=([^&#\s]+)/i);
+
+      if (sessionMatch) {
+        const s = sessionMatch[1].toLowerCase();
+        if (s === "entry" || s === "exit" || s === "both") {
+          sessionType = s;
+        }
+      }
+
+      if (tokenMatch) {
+        clean = decodeURIComponent(tokenMatch[1]).trim();
+      } else if (codeMatch) {
+        clean = decodeURIComponent(codeMatch[1]).trim();
+      }
+    }
+  }
+
+  // 3. Strip quotes or "token=" / "code=" prefixes
+  clean = clean.replace(/^["']|["']$/g, "").trim();
+  if (clean.toLowerCase().startsWith("token=")) {
+    clean = clean.substring(6).trim();
+  } else if (clean.toLowerCase().startsWith("code=")) {
+    clean = clean.substring(5).trim();
+  }
+
+  return { token: clean, sessionType };
+}

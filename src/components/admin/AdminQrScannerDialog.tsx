@@ -32,6 +32,7 @@ import {
   type QrVerificationResult,
   type ConfirmAttendanceResult,
 } from "@/lib/attendance-qr.server";
+import { parseAndExtractQrToken } from "@/lib/attendance";
 
 interface AdminQrScannerDialogProps {
   open: boolean;
@@ -82,7 +83,8 @@ export function AdminQrScannerDialog({
   const processToken = useCallback(
     async (rawToken: string, autoConfirm = false) => {
       if (isVerifying || isConfirming) return;
-      const clean = rawToken.trim();
+      const extracted = parseAndExtractQrToken(rawToken);
+      const clean = extracted.token;
       if (!clean) return;
 
       stopCamera();
@@ -135,7 +137,11 @@ export function AdminQrScannerDialog({
           toast.warning(res.resultMessage || "QR verification returned an issue.");
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Verification request failed";
+        const rawMsg = err instanceof Error ? err.message : "Verification request failed";
+        const msg =
+          rawMsg.includes("Failed to fetch") || rawMsg.includes("fetch")
+            ? "Network error or connection lost. Please verify your connection and try scanning again."
+            : rawMsg;
         setVerificationResult({
           valid: false,
           resultCode: "VERIFICATION_FAILED",

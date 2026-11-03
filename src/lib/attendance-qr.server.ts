@@ -1,7 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { todayLocal, workshopDays, getKolkataTime, getNextSessionUnlockTime, SESSION_START_HOUR } from "./attendance";
+import { todayLocal, workshopDays, getKolkataTime, getNextSessionUnlockTime, SESSION_START_HOUR, parseAndExtractQrToken } from "./attendance";
 import { computeVisualFeatureSimilarity, fetchStorageImage } from "./face-verification.server";
+
+export { parseAndExtractQrToken } from "./attendance";
 
 export interface ParticipantQrResponse {
   ok: boolean;
@@ -302,263 +304,278 @@ export interface QrVerificationResult {
 export const verifyParticipantQr = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((input: { token: string; sessionType?: "entry" | "exit" | "both" }) => {
-    let clean = String(input.token ?? "").trim();
-    let sessionType: "entry" | "exit" | "both" = input.sessionType || "entry";
-    // Support JSON QR payload or raw token
-    if (clean.startsWith("{") && clean.endsWith("}")) {
-      try {
-        const parsed = JSON.parse(clean);
-        if (parsed.token) clean = String(parsed.token).trim();
-        if (parsed.sessionType && (parsed.sessionType === "entry" || parsed.sessionType === "exit" || parsed.sessionType === "both")) {
-          sessionType = parsed.sessionType;
-        }
-      } catch {
-        // Fall back to clean
-      }
-    }
-    return { token: clean, sessionType };
+    const extracted = parseAndExtractQrToken(input.token);
+    const sessionType: "entry" | "exit" | "both" =
+      input.sessionType || extracted.sessionType || "entry";
+    return { token: extracted.token, sessionType };
   })
   .handler(async ({ data: input, context }): Promise<QrVerificationResult> => {
-    const { userId } = context;
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const { userId } = context;
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Authorization check: Only staff
-    const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
-    if (!isStaff) {
-      return {
-        valid: false,
-        resultCode: "UNAUTHORIZED",
-        resultMessage: "Only authorized administrators can verify attendance QR codes.",
+      // Authorization check: Only staff
+      const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+      if (!isStaff) {
+        return {
+          valid: false,
+          resultCode: "UNAUTHORIZED",
+          resultMessage: "Only authorized administrators can verify attendance QR codes.",
+        };
+      }
+
+      const rawToken = input.token;
+      if (!rawToken) {
+        return {
+          valid: false,
+          resultCode: "INVALID_QR",
+          resultMessage: "QR token is empty or invalid.",
+        };
+      }
+
+      // Sanitize token characters to guarantee safe PostgREST query without syntax errors
+      const safeToken = rawToken.replace(/[^a-zA-Z0-9_-]/g, "");
+      if (!safeToken) {
+        return {
+          valid: false,
+          resultCode: "INVALID_QR",
+          resultMessage: "QR token contains invalid characters.",
+        };
+      }
+
+      const today = todayLocal();
+
+      // Query session by token or short_code safely
+      const { data: sessions, error: sessionErr } = await supabaseAdmin
+        .from("qr_sessions")
+        .select("*")
+        .or(`token.eq.${safeToken},short_code.eq.${safeToken.toUpperCase()}`)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (sessionErr || !sessions?.length) {
+        return {
+          valid: false,
+          resultCode: "INVALID_QR",
+          resultMessage: "Invalid QR — Token not recognized or does not exist.",
+        };
+      }
+
+      const session = sessions[0] as unknown as {
+        id: string;
+        participant_id?: string | null;
+        created_by?: string | null;
+        day_date: string;
+        token: string;
+        expires_at: string;
+        revoked: boolean;
+        revoked_at?: string | null;
+        used_at?: string | null;
       };
-    }
 
-    const { token } = input;
-    if (!token) {
-      return {
-        valid: false,
-        resultCode: "INVALID_QR",
-        resultMessage: "QR token is empty or invalid.",
+      const targetParticipantId = session.participant_id || session.created_by;
+      if (!targetParticipantId) {
+        return {
+          valid: false,
+          resultCode: "INVALID_QR",
+          resultMessage: "Invalid QR — Token is not bound to a registered participant.",
+        };
+      }
+
+      // Load participant profile
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, full_name, participant_code, email, phone, photo_path, verification_status")
+        .eq("id", targetParticipantId)
+        .maybeSingle();
+
+      if (!profile) {
+        return {
+          valid: false,
+          resultCode: "INVALID_QR",
+          resultMessage: "Participant profile not found.",
+        };
+      }
+
+      // Generate signed photo URL if photo exists (safely wrapped)
+      let photoUrl: string | null = null;
+      if (profile.photo_path) {
+        try {
+          const { data: signRes } = await supabaseAdmin.storage
+            .from("photos")
+            .createSignedUrl(profile.photo_path, 3600);
+          photoUrl = signRes?.signedUrl ?? null;
+        } catch {
+          photoUrl = null;
+        }
+      }
+
+      const participantData = {
+        id: profile.id,
+        fullName: profile.full_name,
+        participantCode: profile.participant_code,
+        email: profile.email,
+        phone: profile.phone,
+        photoUrl,
+        photoPath: profile.photo_path,
+        verificationStatus: profile.verification_status,
       };
-    }
 
-    const today = todayLocal();
+      // 1. Participant approval status check
+      if (profile.verification_status !== "verified") {
+        return {
+          valid: false,
+          resultCode: "PARTICIPANT_NOT_APPROVED",
+          resultMessage: `Participant Not Approved — Registration status is ${profile.verification_status}.`,
+          participant: participantData,
+        };
+      }
 
-    // Query session by token or short_code
-    const { data: sessions, error: sessionErr } = await supabaseAdmin
-      .from("qr_sessions")
-      .select("*")
-      .or(`token.eq.${token},short_code.eq.${token.toUpperCase()}`)
-      .order("created_at", { ascending: false })
-      .limit(1);
+      // 2. Revocation check
+      if (session.revoked || session.revoked_at) {
+        return {
+          valid: false,
+          resultCode: "QR_REVOKED",
+          resultMessage: "QR Revoked — This QR code has been revoked and is no longer valid.",
+        };
+      }
 
-    if (sessionErr || !sessions?.length) {
+      // 3. Already used check
+      if (session.used_at) {
+        return {
+          valid: false,
+          resultCode: "QR_ALREADY_USED",
+          resultMessage: "QR Already Used — This attendance code has already been scanned.",
+        };
+      }
+
+      // 4. Expiration check
+      if (new Date(session.expires_at).getTime() < Date.now()) {
+        return {
+          valid: false,
+          resultCode: "QR_EXPIRED",
+          resultMessage: `QR Expired — This QR code expired at ${new Date(session.expires_at).toLocaleTimeString()}. Ask participant to refresh.`,
+        };
+      }
+
+      // 5. Date check
+      if (session.day_date !== today) {
+        return {
+          valid: false,
+          resultCode: "WRONG_DATE",
+          resultMessage: `Wrong Workshop Date — This QR is for ${session.day_date}, but today's session is ${today}.`,
+        };
+      }
+
+      // 6. Check existing attendance record for Entry / Exit rules
+      const { data: attRecord } = await supabaseAdmin
+        .from("attendance")
+        .select("id, status, morning_status, afternoon_status, checked_in_at, method")
+        .eq("user_id", profile.id)
+        .eq("day_date", today)
+        .maybeSingle();
+
+      const hasEntry = Boolean(
+        attRecord &&
+          (attRecord.morning_status === "present" ||
+            (attRecord.status === "present" && !attRecord.morning_status))
+      );
+      const hasExit = Boolean(attRecord && attRecord.afternoon_status === "present");
+
+      if (input.sessionType === "exit") {
+        if (!hasEntry) {
+          return {
+            valid: false,
+            resultCode: "VERIFICATION_FAILED",
+            resultMessage: "Entry attendance is missing for today. Participant must mark Entry attendance before Exit.",
+            participant: participantData,
+            attendance: attRecord
+              ? {
+                  id: attRecord.id,
+                  status: attRecord.status,
+                  checkedInAt: attRecord.checked_in_at,
+                  method: attRecord.method,
+                }
+              : undefined,
+          };
+        }
+        if (hasExit) {
+          return {
+            valid: false,
+            resultCode: "ATTENDANCE_ALREADY_MARKED",
+            resultMessage: "Exit attendance has already been recorded for today.",
+            participant: participantData,
+            attendance: {
+              id: attRecord!.id,
+              status: attRecord!.status,
+              checkedInAt: attRecord!.checked_in_at,
+              method: attRecord!.method,
+            },
+          };
+        }
+      } else if (input.sessionType === "entry") {
+        if (hasEntry) {
+          return {
+            valid: false,
+            resultCode: "ATTENDANCE_ALREADY_MARKED",
+            resultMessage: "Entry attendance has already been recorded for today.",
+            participant: participantData,
+            attendance: {
+              id: attRecord!.id,
+              status: attRecord!.status,
+              checkedInAt: attRecord!.checked_in_at,
+              method: attRecord!.method,
+            },
+          };
+        }
+      } else {
+        // sessionType === "both"
+        if (hasEntry && hasExit) {
+          return {
+            valid: false,
+            resultCode: "ATTENDANCE_ALREADY_MARKED",
+            resultMessage: "Both Entry and Exit attendance have already been recorded for today.",
+            participant: participantData,
+            attendance: {
+              id: attRecord!.id,
+              status: attRecord!.status,
+              checkedInAt: attRecord!.checked_in_at,
+              method: attRecord!.method,
+            },
+          };
+        }
+      }
+
+      // All checks passed!
       return {
-        valid: false,
-        resultCode: "INVALID_QR",
-        resultMessage: "Invalid QR — Token not recognized or does not exist.",
-      };
-    }
-
-    const session = sessions[0] as unknown as {
-      id: string;
-      participant_id?: string | null;
-      created_by?: string | null;
-      day_date: string;
-      token: string;
-      expires_at: string;
-      revoked: boolean;
-      revoked_at?: string | null;
-      used_at?: string | null;
-    };
-
-    const targetParticipantId = session.participant_id || session.created_by;
-    if (!targetParticipantId) {
-      return {
-        valid: false,
-        resultCode: "INVALID_QR",
-        resultMessage: "Invalid QR — Token is not bound to a registered participant.",
-      };
-    }
-
-    // Load participant profile
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("id, full_name, participant_code, email, phone, photo_path, verification_status")
-      .eq("id", targetParticipantId)
-      .maybeSingle();
-
-    if (!profile) {
-      return {
-        valid: false,
-        resultCode: "INVALID_QR",
-        resultMessage: "Participant profile not found.",
-      };
-    }
-
-    // Generate signed photo URL if photo exists
-    let photoUrl: string | null = null;
-    if (profile.photo_path) {
-      const { data: signRes } = await supabaseAdmin.storage
-        .from("photos")
-        .createSignedUrl(profile.photo_path, 3600);
-      photoUrl = signRes?.signedUrl ?? null;
-    }
-
-    const participantData = {
-      id: profile.id,
-      fullName: profile.full_name,
-      participantCode: profile.participant_code,
-      email: profile.email,
-      phone: profile.phone,
-      photoUrl,
-      photoPath: profile.photo_path,
-      verificationStatus: profile.verification_status,
-    };
-
-    // 1. Participant approval status check
-    if (profile.verification_status !== "verified") {
-      return {
-        valid: false,
-        resultCode: "PARTICIPANT_NOT_APPROVED",
-        resultMessage: `Participant Not Approved — Registration status is ${profile.verification_status}.`,
+        valid: true,
+        resultCode: "READY_TO_MARK",
+        resultMessage:
+          input.sessionType === "exit"
+            ? "Valid QR — Ready to Mark Exit Attendance"
+            : "Valid QR — Ready to Mark Entry Attendance",
         participant: participantData,
+        session: {
+          id: session.id,
+          dayDate: session.day_date,
+          expiresAt: session.expires_at,
+          token: session.token,
+        },
+        entryMarked: hasEntry,
+        exitMarked: hasExit,
+        sessionType: input.sessionType,
       };
-    }
-
-    // 2. Revocation check
-    if (session.revoked || session.revoked_at) {
+    } catch (err: unknown) {
+      console.error("verifyParticipantQr error:", err);
       return {
         valid: false,
-        resultCode: "QR_REVOKED",
-        resultMessage: "QR Revoked — This QR code has been revoked and is no longer valid.",
+        resultCode: "VERIFICATION_FAILED",
+        resultMessage:
+          err instanceof Error
+            ? err.message
+            : "An unexpected error occurred while verifying the QR code.",
       };
     }
-
-    // 3. Already used check
-    if (session.used_at) {
-      return {
-        valid: false,
-        resultCode: "QR_ALREADY_USED",
-        resultMessage: "QR Already Used — This attendance code has already been scanned.",
-      };
-    }
-
-    // 4. Expiration check
-    if (new Date(session.expires_at).getTime() < Date.now()) {
-      return {
-        valid: false,
-        resultCode: "QR_EXPIRED",
-        resultMessage: `QR Expired — This QR code expired at ${new Date(session.expires_at).toLocaleTimeString()}. Ask participant to refresh.`,
-      };
-    }
-
-    // 5. Date check
-    if (session.day_date !== today) {
-      return {
-        valid: false,
-        resultCode: "WRONG_DATE",
-        resultMessage: `Wrong Workshop Date — This QR is for ${session.day_date}, but today's session is ${today}.`,
-      };
-    }
-
-    // 6. Check existing attendance record for Entry / Exit rules
-    const { data: attRecord } = await supabaseAdmin
-      .from("attendance")
-      .select("id, status, morning_status, afternoon_status, checked_in_at, method")
-      .eq("user_id", profile.id)
-      .eq("day_date", today)
-      .maybeSingle();
-
-    const hasEntry = Boolean(
-      attRecord &&
-        (attRecord.morning_status === "present" ||
-          (attRecord.status === "present" && !attRecord.morning_status))
-    );
-    const hasExit = Boolean(attRecord && attRecord.afternoon_status === "present");
-
-    if (input.sessionType === "exit") {
-      if (!hasEntry) {
-        return {
-          valid: false,
-          resultCode: "VERIFICATION_FAILED",
-          resultMessage: "Entry attendance is missing for today. Participant must mark Entry attendance before Exit.",
-          participant: participantData,
-          attendance: attRecord
-            ? {
-                id: attRecord.id,
-                status: attRecord.status,
-                checkedInAt: attRecord.checked_in_at,
-                method: attRecord.method,
-              }
-            : undefined,
-        };
-      }
-      if (hasExit) {
-        return {
-          valid: false,
-          resultCode: "ATTENDANCE_ALREADY_MARKED",
-          resultMessage: "Exit attendance has already been recorded for today.",
-          participant: participantData,
-          attendance: {
-            id: attRecord!.id,
-            status: attRecord!.status,
-            checkedInAt: attRecord!.checked_in_at,
-            method: attRecord!.method,
-          },
-        };
-      }
-    } else if (input.sessionType === "entry") {
-      if (hasEntry) {
-        return {
-          valid: false,
-          resultCode: "ATTENDANCE_ALREADY_MARKED",
-          resultMessage: "Entry attendance has already been recorded for today.",
-          participant: participantData,
-          attendance: {
-            id: attRecord!.id,
-            status: attRecord!.status,
-            checkedInAt: attRecord!.checked_in_at,
-            method: attRecord!.method,
-          },
-        };
-      }
-    } else {
-      // sessionType === "both"
-      if (hasEntry && hasExit) {
-        return {
-          valid: false,
-          resultCode: "ATTENDANCE_ALREADY_MARKED",
-          resultMessage: "Both Entry and Exit attendance have already been recorded for today.",
-          participant: participantData,
-          attendance: {
-            id: attRecord!.id,
-            status: attRecord!.status,
-            checkedInAt: attRecord!.checked_in_at,
-            method: attRecord!.method,
-          },
-        };
-      }
-    }
-
-    // All checks passed!
-    return {
-      valid: true,
-      resultCode: "READY_TO_MARK",
-      resultMessage:
-        input.sessionType === "exit"
-          ? "Valid QR — Ready to Mark Exit Attendance"
-          : "Valid QR — Ready to Mark Entry Attendance",
-      participant: participantData,
-      session: {
-        id: session.id,
-        dayDate: session.day_date,
-        expiresAt: session.expires_at,
-        token: session.token,
-      },
-      entryMarked: hasEntry,
-      exitMarked: hasExit,
-      sessionType: input.sessionType,
-    };
   });
 
 export interface ConfirmAttendanceResult {
@@ -591,231 +608,200 @@ export interface ConfirmAttendanceResult {
 export const confirmParticipantAttendance = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((input: { token: string; sessionType?: "entry" | "exit" | "both" }) => {
-    let clean = String(input.token ?? "").trim();
-    let sessionType: "entry" | "exit" | "both" = input.sessionType || "entry";
-    if (clean.startsWith("{") && clean.endsWith("}")) {
-      try {
-        const p = JSON.parse(clean);
-        if (p.token) clean = String(p.token).trim();
-        if (p.sessionType && (p.sessionType === "entry" || p.sessionType === "exit" || p.sessionType === "both")) {
-          sessionType = p.sessionType;
-        }
-      } catch {
-        // fallback
-      }
-    }
-    return { token: clean, sessionType };
+    const extracted = parseAndExtractQrToken(input.token);
+    const sessionType: "entry" | "exit" | "both" =
+      input.sessionType || extracted.sessionType || "entry";
+    return { token: extracted.token, sessionType };
   })
   .handler(async ({ data: input, context }): Promise<ConfirmAttendanceResult> => {
-    const { userId } = context;
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const { userId } = context;
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // 1. Verify caller is staff
-    const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
-    if (!isStaff) {
-      return {
-        ok: false,
-        resultCode: "UNAUTHORIZED",
-        message: "Only authorized administrators can confirm attendance.",
-      };
-    }
+      // 1. Verify caller is staff
+      const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+      if (!isStaff) {
+        return {
+          ok: false,
+          resultCode: "UNAUTHORIZED",
+          message: "Only authorized administrators can confirm attendance.",
+        };
+      }
 
-    const { token, sessionType } = input;
-    const today = todayLocal();
-    const nowIso = new Date().toISOString();
+      const { token, sessionType } = input;
+      const today = todayLocal();
+      const nowIso = new Date().toISOString();
 
-    // 2. Fetch session
-    const { data: sessions } = await supabaseAdmin
-      .from("qr_sessions")
-      .select("*")
-      .or(`token.eq.${token},short_code.eq.${token.toUpperCase()}`)
-      .limit(1);
-
-    const session = sessions?.[0] as unknown as {
-      id: string;
-      participant_id?: string | null;
-      created_by?: string | null;
-      day_date: string;
-      expires_at: string;
-      revoked: boolean;
-      revoked_at?: string | null;
-      used_at?: string | null;
-    };
-
-    const targetParticipantId = session?.participant_id || session?.created_by;
-    if (!session || !targetParticipantId) {
-      return {
-        ok: false,
-        resultCode: "FAILED",
-        message: "Invalid or unrecognized QR token.",
-      };
-    }
-
-    if (session.revoked) {
-      return {
-        ok: false,
-        resultCode: "FAILED",
-        message: "This QR code has already been consumed or revoked.",
-      };
-    }
-
-    if (new Date(session.expires_at).getTime() < Date.now()) {
-      return {
-        ok: false,
-        resultCode: "FAILED",
-        message: "This QR code has expired.",
-      };
-    }
-
-    if (session.day_date !== today) {
-      return {
-        ok: false,
-        resultCode: "FAILED",
-        message: `This QR is for date ${session.day_date}, but today is ${today}.`,
-      };
-    }
-
-    // 3. Load profile
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("id, full_name, participant_code, email, photo_path, verification_status")
-      .eq("id", targetParticipantId)
-      .maybeSingle();
-
-    if (!profile || profile.verification_status !== "verified") {
-      return {
-        ok: false,
-        resultCode: "FAILED",
-        message: "Participant profile is not approved.",
-      };
-    }
-
-    // 4. Check existing attendance for Entry / Exit rules
-    const { data: existing } = await supabaseAdmin
-      .from("attendance")
-      .select("id, status, morning_status, afternoon_status, checked_in_at, method, remarks")
-      .eq("user_id", profile.id)
-      .eq("day_date", today)
-      .maybeSingle();
-
-    const hasEntry = Boolean(
-      existing &&
-        (existing.morning_status === "present" ||
-          (existing.status === "present" && !existing.morning_status))
-    );
-    const hasExit = Boolean(existing && existing.afternoon_status === "present");
-
-    if (sessionType === "exit") {
-      if (!hasEntry) {
+      const safeToken = String(token ?? "").replace(/[^a-zA-Z0-9_-]/g, "");
+      if (!safeToken) {
         return {
           ok: false,
           resultCode: "FAILED",
-          message: "Entry attendance is missing for today. Participant must mark Entry attendance before Exit.",
+          message: "Invalid or unrecognized QR token.",
         };
       }
-      if (hasExit) {
+
+      // 2. Fetch session safely
+      const { data: sessions } = await supabaseAdmin
+        .from("qr_sessions")
+        .select("*")
+        .or(`token.eq.${safeToken},short_code.eq.${safeToken.toUpperCase()}`)
+        .limit(1);
+
+      const session = sessions?.[0] as unknown as {
+        id: string;
+        participant_id?: string | null;
+        created_by?: string | null;
+        day_date: string;
+        expires_at: string;
+        revoked: boolean;
+        revoked_at?: string | null;
+        used_at?: string | null;
+      };
+
+      const targetParticipantId = session?.participant_id || session?.created_by;
+      if (!session || !targetParticipantId) {
         return {
           ok: false,
-          resultCode: "ALREADY_MARKED",
-          message: "Exit attendance has already been recorded for this participant today.",
-          attendance: {
-            id: existing!.id,
-            status: existing!.status,
-            morningStatus: existing!.morning_status,
-            afternoonStatus: existing!.afternoon_status,
-            checkedInAt: existing!.checked_in_at,
-            dayDate: today,
-            method: existing!.method,
-          },
+          resultCode: "FAILED",
+          message: "Invalid or unrecognized QR token.",
         };
       }
-    } else if (sessionType === "entry") {
-      if (hasEntry) {
+
+      if (session.revoked) {
         return {
           ok: false,
-          resultCode: "ALREADY_MARKED",
-          message: "Entry attendance has already been recorded for this participant today.",
-          attendance: {
-            id: existing!.id,
-            status: existing!.status,
-            morningStatus: existing!.morning_status,
-            afternoonStatus: existing!.afternoon_status,
-            checkedInAt: existing!.checked_in_at,
-            dayDate: today,
-            method: existing!.method,
-          },
+          resultCode: "FAILED",
+          message: "This QR code has already been consumed or revoked.",
         };
       }
-    } else {
-      // both
-      if (hasEntry && hasExit) {
+
+      if (new Date(session.expires_at).getTime() < Date.now()) {
         return {
           ok: false,
-          resultCode: "ALREADY_MARKED",
-          message: "Both Entry and Exit attendance have already been recorded for today.",
-          attendance: {
-            id: existing!.id,
-            status: existing!.status,
-            morningStatus: existing!.morning_status,
-            afternoonStatus: existing!.afternoon_status,
-            checkedInAt: existing!.checked_in_at,
-            dayDate: today,
-            method: existing!.method,
-          },
+          resultCode: "FAILED",
+          message: "This QR code has expired.",
         };
       }
-    }
 
-    // 5. Insert or Update attendance atomically
-    let targetAttendanceId: string;
-    let finalMorningStatus: string | null = null;
-    let finalAfternoonStatus: string | null = null;
+      if (session.day_date !== today) {
+        return {
+          ok: false,
+          resultCode: "FAILED",
+          message: `This QR is for date ${session.day_date}, but today is ${today}.`,
+        };
+      }
 
-    if (sessionType === "exit") {
-      const updatedRemarks = existing?.remarks
-        ? `${existing.remarks} | EXIT_AT:${nowIso}`
-        : `Verified via Admin QR Scanner | EXIT_AT:${nowIso}`;
+      // 3. Load profile
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, full_name, participant_code, email, photo_path, verification_status")
+        .eq("id", targetParticipantId)
+        .maybeSingle();
 
-      const { data: updated, error: attErr } = await supabaseAdmin
+      if (!profile || profile.verification_status !== "verified") {
+        return {
+          ok: false,
+          resultCode: "FAILED",
+          message: "Participant profile is not approved.",
+        };
+      }
+
+      // 4. Check existing attendance for Entry / Exit rules
+      const { data: existing } = await supabaseAdmin
         .from("attendance")
-        .update({
-          afternoon_status: "present",
-          status: "present",
-          remarks: updatedRemarks,
-          updated_at: nowIso,
-        })
-        .eq("id", existing!.id)
-        .select()
-        .single();
+        .select("id, status, morning_status, afternoon_status, checked_in_at, method, remarks")
+        .eq("user_id", profile.id)
+        .eq("day_date", today)
+        .maybeSingle();
 
-      if (attErr || !updated) {
-        return {
-          ok: false,
-          resultCode: "FAILED",
-          message: `Failed to record Exit attendance: ${attErr?.message || "Unknown error"}`,
-        };
+      const hasEntry = Boolean(
+        existing &&
+          (existing.morning_status === "present" ||
+            (existing.status === "present" && !existing.morning_status))
+      );
+      const hasExit = Boolean(existing && existing.afternoon_status === "present");
+
+      if (sessionType === "exit") {
+        if (!hasEntry) {
+          return {
+            ok: false,
+            resultCode: "FAILED",
+            message: "Entry attendance is missing for today. Participant must mark Entry attendance before Exit.",
+          };
+        }
+        if (hasExit) {
+          return {
+            ok: false,
+            resultCode: "ALREADY_MARKED",
+            message: "Exit attendance has already been recorded for this participant today.",
+            attendance: {
+              id: existing!.id,
+              status: existing!.status,
+              morningStatus: existing!.morning_status,
+              afternoonStatus: existing!.afternoon_status,
+              checkedInAt: existing!.checked_in_at,
+              dayDate: today,
+              method: existing!.method,
+            },
+          };
+        }
+      } else if (sessionType === "entry") {
+        if (hasEntry) {
+          return {
+            ok: false,
+            resultCode: "ALREADY_MARKED",
+            message: "Entry attendance has already been recorded for this participant today.",
+            attendance: {
+              id: existing!.id,
+              status: existing!.status,
+              morningStatus: existing!.morning_status,
+              afternoonStatus: existing!.afternoon_status,
+              checkedInAt: existing!.checked_in_at,
+              dayDate: today,
+              method: existing!.method,
+            },
+          };
+        }
+      } else {
+        // both
+        if (hasEntry && hasExit) {
+          return {
+            ok: false,
+            resultCode: "ALREADY_MARKED",
+            message: "Both Entry and Exit attendance have already been recorded for today.",
+            attendance: {
+              id: existing!.id,
+              status: existing!.status,
+              morningStatus: existing!.morning_status,
+              afternoonStatus: existing!.afternoon_status,
+              checkedInAt: existing!.checked_in_at,
+              dayDate: today,
+              method: existing!.method,
+            },
+          };
+        }
       }
-      targetAttendanceId = updated.id;
-      finalMorningStatus = updated.morning_status;
-      finalAfternoonStatus = updated.afternoon_status;
-    } else if (sessionType === "entry") {
-      if (existing) {
-        const updatedRemarks = existing.remarks
-          ? `${existing.remarks} | ENTRY_AT:${nowIso}`
-          : `Verified via Admin QR Scanner | ENTRY_AT:${nowIso}`;
+
+      // 5. Insert or Update attendance atomically
+      let targetAttendanceId: string;
+      let finalMorningStatus: string | null = null;
+      let finalAfternoonStatus: string | null = null;
+
+      if (sessionType === "exit") {
+        const updatedRemarks = existing?.remarks
+          ? `${existing.remarks} | EXIT_AT:${nowIso}`
+          : `Verified via Admin QR Scanner | EXIT_AT:${nowIso}`;
 
         const { data: updated, error: attErr } = await supabaseAdmin
           .from("attendance")
           .update({
-            morning_status: "present",
+            afternoon_status: "present",
             status: "present",
-            checked_in_at: existing.checked_in_at || nowIso,
-            method: "qr",
-            marked_by: userId,
             remarks: updatedRemarks,
             updated_at: nowIso,
           })
-          .eq("id", existing.id)
+          .eq("id", existing!.id)
           .select()
           .single();
 
@@ -823,170 +809,216 @@ export const confirmParticipantAttendance = createServerFn({ method: "POST" })
           return {
             ok: false,
             resultCode: "FAILED",
-            message: `Failed to update Entry attendance: ${attErr?.message || "Unknown error"}`,
+            message: `Failed to record Exit attendance: ${attErr?.message || "Unknown error"}`,
           };
         }
         targetAttendanceId = updated.id;
         finalMorningStatus = updated.morning_status;
         finalAfternoonStatus = updated.afternoon_status;
-      } else {
-        const { data: inserted, error: attErr } = await supabaseAdmin
-          .from("attendance")
-          .insert({
-            user_id: profile.id,
-            day_date: today,
-            status: "present",
-            morning_status: "present",
-            afternoon_status: null,
-            method: "qr",
-            qr_session_id: session.id,
-            marked_by: userId,
-            remarks: `Verified via Admin QR Scanner | ENTRY_AT:${nowIso}`,
-            checked_in_at: nowIso,
-          })
-          .select()
-          .single();
+      } else if (sessionType === "entry") {
+        if (existing) {
+          const updatedRemarks = existing.remarks
+            ? `${existing.remarks} | ENTRY_AT:${nowIso}`
+            : `Verified via Admin QR Scanner | ENTRY_AT:${nowIso}`;
 
-        if (attErr || !inserted) {
-          if (attErr?.code === "23505") {
+          const { data: updated, error: attErr } = await supabaseAdmin
+            .from("attendance")
+            .update({
+              morning_status: "present",
+              status: "present",
+              checked_in_at: existing.checked_in_at || nowIso,
+              method: "qr",
+              marked_by: userId,
+              remarks: updatedRemarks,
+              updated_at: nowIso,
+            })
+            .eq("id", existing.id)
+            .select()
+            .single();
+
+          if (attErr || !updated) {
             return {
               ok: false,
-              resultCode: "ALREADY_MARKED",
-              message: "Attendance was just marked concurrently.",
+              resultCode: "FAILED",
+              message: `Failed to update Entry attendance: ${attErr?.message || "Unknown error"}`,
             };
           }
-          return {
-            ok: false,
-            resultCode: "FAILED",
-            message: `Failed to record Entry attendance: ${attErr?.message || "Unknown error"}`,
-          };
-        }
-        targetAttendanceId = inserted.id;
-        finalMorningStatus = inserted.morning_status;
-        finalAfternoonStatus = inserted.afternoon_status;
-      }
-    } else {
-      // both
-      if (existing) {
-        const updatedRemarks = existing.remarks
-          ? `${existing.remarks} | ATTENDANCE_AT:${nowIso}`
-          : `Verified via Admin QR Scanner | ATTENDANCE_AT:${nowIso}`;
+          targetAttendanceId = updated.id;
+          finalMorningStatus = updated.morning_status;
+          finalAfternoonStatus = updated.afternoon_status;
+        } else {
+          const { data: inserted, error: attErr } = await supabaseAdmin
+            .from("attendance")
+            .insert({
+              user_id: profile.id,
+              day_date: today,
+              status: "present",
+              morning_status: "present",
+              afternoon_status: null,
+              method: "qr",
+              qr_session_id: session.id,
+              marked_by: userId,
+              remarks: `Verified via Admin QR Scanner | ENTRY_AT:${nowIso}`,
+              checked_in_at: nowIso,
+            })
+            .select()
+            .single();
 
-        const { data: updated, error: attErr } = await supabaseAdmin
-          .from("attendance")
-          .update({
-            morning_status: "present",
-            afternoon_status: "present",
-            status: "present",
-            checked_in_at: existing.checked_in_at || nowIso,
-            method: "qr",
-            marked_by: userId,
-            remarks: updatedRemarks,
-            updated_at: nowIso,
-          })
-          .eq("id", existing.id)
-          .select()
-          .single();
-
-        if (attErr || !updated) {
-          return {
-            ok: false,
-            resultCode: "FAILED",
-            message: `Failed to record attendance: ${attErr?.message || "Unknown error"}`,
-          };
-        }
-        targetAttendanceId = updated.id;
-        finalMorningStatus = updated.morning_status;
-        finalAfternoonStatus = updated.afternoon_status;
-      } else {
-        const { data: inserted, error: attErr } = await supabaseAdmin
-          .from("attendance")
-          .insert({
-            user_id: profile.id,
-            day_date: today,
-            status: "present",
-            morning_status: "present",
-            afternoon_status: "present",
-            method: "qr",
-            qr_session_id: session.id,
-            marked_by: userId,
-            remarks: `Verified via Admin QR Scanner | ATTENDANCE_AT:${nowIso}`,
-            checked_in_at: nowIso,
-          })
-          .select()
-          .single();
-
-        if (attErr || !inserted) {
-          if (attErr?.code === "23505") {
+          if (attErr || !inserted) {
+            if (attErr?.code === "23505") {
+              return {
+                ok: false,
+                resultCode: "ALREADY_MARKED",
+                message: "Attendance was just marked concurrently.",
+              };
+            }
             return {
               ok: false,
-              resultCode: "ALREADY_MARKED",
-              message: "Attendance was just marked concurrently.",
+              resultCode: "FAILED",
+              message: `Failed to record Entry attendance: ${attErr?.message || "Unknown error"}`,
             };
           }
-          return {
-            ok: false,
-            resultCode: "FAILED",
-            message: `Failed to record attendance: ${attErr?.message || "Unknown error"}`,
-          };
+          targetAttendanceId = inserted.id;
+          finalMorningStatus = inserted.morning_status;
+          finalAfternoonStatus = inserted.afternoon_status;
         }
-        targetAttendanceId = inserted.id;
-        finalMorningStatus = inserted.morning_status;
-        finalAfternoonStatus = inserted.afternoon_status;
+      } else {
+        // both
+        if (existing) {
+          const updatedRemarks = existing.remarks
+            ? `${existing.remarks} | ATTENDANCE_AT:${nowIso}`
+            : `Verified via Admin QR Scanner | ATTENDANCE_AT:${nowIso}`;
+
+          const { data: updated, error: attErr } = await supabaseAdmin
+            .from("attendance")
+            .update({
+              morning_status: "present",
+              afternoon_status: "present",
+              status: "present",
+              checked_in_at: existing.checked_in_at || nowIso,
+              method: "qr",
+              marked_by: userId,
+              remarks: updatedRemarks,
+              updated_at: nowIso,
+            })
+            .eq("id", existing.id)
+            .select()
+            .single();
+
+          if (attErr || !updated) {
+            return {
+              ok: false,
+              resultCode: "FAILED",
+              message: `Failed to record attendance: ${attErr?.message || "Unknown error"}`,
+            };
+          }
+          targetAttendanceId = updated.id;
+          finalMorningStatus = updated.morning_status;
+          finalAfternoonStatus = updated.afternoon_status;
+        } else {
+          const { data: inserted, error: attErr } = await supabaseAdmin
+            .from("attendance")
+            .insert({
+              user_id: profile.id,
+              day_date: today,
+              status: "present",
+              morning_status: "present",
+              afternoon_status: "present",
+              method: "qr",
+              qr_session_id: session.id,
+              marked_by: userId,
+              remarks: `Verified via Admin QR Scanner | ATTENDANCE_AT:${nowIso}`,
+              checked_in_at: nowIso,
+            })
+            .select()
+            .single();
+
+          if (attErr || !inserted) {
+            if (attErr?.code === "23505") {
+              return {
+                ok: false,
+                resultCode: "ALREADY_MARKED",
+                message: "Attendance was just marked concurrently.",
+              };
+            }
+            return {
+              ok: false,
+              resultCode: "FAILED",
+              message: `Failed to record attendance: ${attErr?.message || "Unknown error"}`,
+            };
+          }
+          targetAttendanceId = inserted.id;
+          finalMorningStatus = inserted.morning_status;
+          finalAfternoonStatus = inserted.afternoon_status;
+        }
       }
-    }
 
-    // 6. Mark token as consumed
-    await supabaseAdmin
-      .from("qr_sessions")
-      .update({ revoked: true })
-      .eq("id", session.id);
+      // 6. Mark token as consumed
+      await supabaseAdmin
+        .from("qr_sessions")
+        .update({ revoked: true })
+        .eq("id", session.id);
 
-    // 7. Insert audit log
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: userId,
-      target_user: profile.id,
-      action: sessionType === "exit" ? "attendance_exit_confirmed_qr_scan" : "attendance_entry_confirmed_qr_scan",
-      details: {
-        attendanceId: targetAttendanceId,
-        sessionId: session.id,
-        dayDate: today,
+      // 7. Insert audit log
+      await supabaseAdmin.from("audit_logs").insert({
+        actor_id: userId,
+        target_user: profile.id,
+        action: sessionType === "exit" ? "attendance_exit_confirmed_qr_scan" : "attendance_entry_confirmed_qr_scan",
+        details: {
+          attendanceId: targetAttendanceId,
+          sessionId: session.id,
+          dayDate: today,
+          sessionType,
+          method: "qr_scan",
+        } as never,
+      });
+
+      // 8. Generate signed photo URL for final response (safely wrapped)
+      let photoUrl: string | null = null;
+      if (profile.photo_path) {
+        try {
+          const { data: signRes } = await supabaseAdmin.storage
+            .from("photos")
+            .createSignedUrl(profile.photo_path, 3600);
+          photoUrl = signRes?.signedUrl ?? null;
+        } catch {
+          photoUrl = null;
+        }
+      }
+
+      return {
+        ok: true,
+        resultCode: "CONFIRMED",
         sessionType,
-        method: "qr_scan",
-      } as never,
-    });
-
-    // 8. Generate signed photo URL for final response
-    let photoUrl: string | null = null;
-    if (profile.photo_path) {
-      const { data: signRes } = await supabaseAdmin.storage
-        .from("photos")
-        .createSignedUrl(profile.photo_path, 3600);
-      photoUrl = signRes?.signedUrl ?? null;
+        message: sessionType === "exit" ? "Exit attendance marked successfully" : "Entry attendance marked successfully",
+        participant: {
+          id: profile.id,
+          fullName: profile.full_name,
+          participantCode: profile.participant_code,
+          email: profile.email,
+          photoUrl,
+        },
+        attendance: {
+          id: targetAttendanceId,
+          status: "present",
+          morningStatus: finalMorningStatus,
+          afternoonStatus: finalAfternoonStatus,
+          checkedInAt: nowIso,
+          dayDate: today,
+          method: "qr_scan",
+        },
+      };
+    } catch (err: unknown) {
+      console.error("confirmParticipantAttendance error:", err);
+      return {
+        ok: false,
+        resultCode: "FAILED",
+        message:
+          err instanceof Error
+            ? err.message
+            : "An unexpected error occurred while confirming attendance.",
+      };
     }
-
-    return {
-      ok: true,
-      resultCode: "CONFIRMED",
-      sessionType,
-      message: sessionType === "exit" ? "Exit attendance marked successfully" : "Entry attendance marked successfully",
-      participant: {
-        id: profile.id,
-        fullName: profile.full_name,
-        participantCode: profile.participant_code,
-        email: profile.email,
-        photoUrl,
-      },
-      attendance: {
-        id: targetAttendanceId,
-        status: "present",
-        morningStatus: finalMorningStatus,
-        afternoonStatus: finalAfternoonStatus,
-        checkedInAt: nowIso,
-        dayDate: today,
-        method: "qr_scan",
-      },
-    };
   });
 
 export type FaceVerificationResultCode =

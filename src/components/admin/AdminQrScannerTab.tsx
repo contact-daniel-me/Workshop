@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import jsQR from "jsqr";
+import { parseAndExtractQrToken } from "@/lib/attendance";
 import {
   verifyParticipantQr,
   confirmParticipantAttendance,
@@ -174,7 +175,8 @@ export function AdminQrScannerTab({
   const processToken = useCallback(
     async (rawToken: string, autoConfirm = false) => {
       if (qrVerifying || qrConfirming) return;
-      const clean = rawToken.trim();
+      const extracted = parseAndExtractQrToken(rawToken);
+      const clean = extracted.token;
       if (!clean) return;
 
       stopQrCamera();
@@ -213,7 +215,11 @@ export function AdminQrScannerTab({
           toast.warning(res.resultMessage || "QR verification returned an issue.");
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Verification request failed";
+        const rawMsg = err instanceof Error ? err.message : "Verification request failed";
+        const msg =
+          rawMsg.includes("Failed to fetch") || rawMsg.includes("fetch")
+            ? "Network error or connection lost. Please verify your connection and try scanning again."
+            : rawMsg;
         setQrVerificationResult({
           valid: false,
           resultCode: "VERIFICATION_FAILED",
