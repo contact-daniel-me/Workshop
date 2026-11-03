@@ -24,6 +24,7 @@ export interface ParticipantRow {
   full_name: string;
   phone: string;
   email: string;
+  password?: string;
   photo_path?: string | null;
   verification_status: "pending" | "verified" | "rejected";
   summary: Summary;

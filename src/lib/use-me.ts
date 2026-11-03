@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { type Settings, type AttStatus, summarize, todayLocal } from "./attendance";
 import type { ParticipantRow } from "./excel";
+import { generateDefaultStudentPassword } from "./auth-helpers";
+import { getAdminParticipantPasswords } from "./admin.functions";
 
 export function useMe() {
   return useQuery({
@@ -106,7 +108,7 @@ export function useAdminData() {
       if (!settings) return null;
       const today = todayLocal();
 
-      const [profilesRes, attendanceRes, qrRes, rolesRes, auditRes, daysRes] = await Promise.all([
+      const [profilesRes, attendanceRes, qrRes, rolesRes, auditRes, daysRes, passwordsRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("id, participant_code, full_name, phone, email, photo_path, verification_status, created_at")
@@ -131,6 +133,10 @@ export function useAdminData() {
           .from("workshop_days")
           .select("id, day_date, is_active, topic, day_number")
           .order("day_date", { ascending: true }),
+        getAdminParticipantPasswords().catch((err) => {
+          console.warn("Failed to load participant passwords from server function:", err);
+          return {} as Record<string, string>;
+        }),
       ]);
 
       if (profilesRes.error) throw profilesRes.error;
@@ -175,12 +181,17 @@ export function useAdminData() {
             afternoon_status: a.afternoon_status ?? null,
           };
         });
+        const plainPassword =
+          (passwordsRes && passwordsRes[p.id]) ||
+          generateDefaultStudentPassword(p.full_name, p.phone);
+
         return {
           id: p.id,
           participant_code: p.participant_code,
           full_name: p.full_name,
           phone: p.phone,
           email: p.email,
+          password: plainPassword,
           photo_path: p.photo_path,
           verification_status: p.verification_status,
           summary,
@@ -194,6 +205,7 @@ export function useAdminData() {
       return {
         profiles,
         participantRows,
+        passwords: passwordsRes,
         attendance,
         qrSessions,
         activeQr,
@@ -202,6 +214,17 @@ export function useAdminData() {
         configuredWorkshopDays,
       };
     },
+  });
+}
+
+/** Staff only hook to fetch or refresh participant passwords map */
+export function useAdminParticipantPasswords() {
+  const { data: me } = useMe();
+  return useQuery({
+    queryKey: ["admin_participant_passwords"],
+    enabled: Boolean(me?.isStaff),
+    staleTime: 30_000,
+    queryFn: () => getAdminParticipantPasswords(),
   });
 }
 

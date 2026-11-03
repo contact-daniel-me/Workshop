@@ -8,6 +8,7 @@ import {
   signedUrls,
 } from "@/lib/use-me";
 import { todayLocal, workshopDays, formatIstTimestamp, formatIstDate, extractExitTimestamp } from "@/lib/attendance";
+import { generateDefaultStudentPassword } from "@/lib/auth-helpers";
 import {
   generate30DayWorkbook,
   generateDailyReportWorkbook,
@@ -54,6 +55,7 @@ import {
   BarChart3,
   Calendar,
   Eye,
+  EyeOff,
   Edit,
   History,
   ShieldAlert,
@@ -220,6 +222,10 @@ function AdminPage() {
   const [esdpBulkDialogOpen, setEsdpBulkDialogOpen] = useState(false);
   const [editTargetUser, setEditTargetUser] = useState<ParticipantEditableData | null>(null);
 
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [allPasswordsRevealed, setAllPasswordsRevealed] = useState(false);
+  const [modalShowPassword, setModalShowPassword] = useState(false);
+
   const handleDownloadParticipantPdf = async (p: {
     id: string;
     full_name: string;
@@ -227,17 +233,24 @@ function AdminPage() {
     email: string;
     phone: string;
     verification_status: string;
+    password?: string;
   }) => {
     setDownloadingPdfId(p.id);
     try {
       const { downloadParticipantCredentialsPdf } = await import("@/lib/credential-pdf");
       const photoPath = adminData?.profiles.find((x) => x.id === p.id)?.photo_path ?? "";
       const photoUrl = p.id ? photoUrls[photoPath] : undefined;
+      const effectivePassword =
+        p.password ||
+        adminData?.passwords?.[p.id] ||
+        generateDefaultStudentPassword(p.full_name, p.phone);
+
       await downloadParticipantCredentialsPdf({
         fullName: p.full_name,
         participantCode: p.participant_code,
         email: p.email,
         phone: p.phone,
+        rawPassword: effectivePassword,
         verificationStatus: p.verification_status,
         photoUrl: photoUrl,
         portalUrl: typeof window !== "undefined" ? `${window.location.origin}/auth` : "/auth",
@@ -1747,13 +1760,34 @@ function AdminPage() {
                       <th className="py-3 px-4">Present</th>
                       <th className="py-3 px-4">Absent</th>
                       <th className="py-3 px-4">Attendance %</th>
+                      <th className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <span>Password</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !allPasswordsRevealed;
+                              setAllPasswordsRevealed(next);
+                              const update: Record<string, boolean> = {};
+                              filteredParticipants.forEach((p) => {
+                                update[p.id] = next;
+                              });
+                              setRevealedPasswords(update);
+                            }}
+                            className="text-[10px] lowercase text-primary hover:underline ml-1 font-normal cursor-pointer"
+                            title={allPasswordsRevealed ? "Hide all passwords" : "Show all passwords"}
+                          >
+                            ({allPasswordsRevealed ? "hide" : "show"})
+                          </button>
+                        </div>
+                      </th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {!filteredParticipants.length ? (
                       <tr>
-                        <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                        <td colSpan={8} className="py-12 text-center text-muted-foreground">
                           No participants match the specified filter criteria.
                         </td>
                       </tr>
@@ -1817,6 +1851,50 @@ function AdminPage() {
                               <span className="text-[11px] text-muted-foreground block">
                                 Final: {p.summary.finalPct}%
                               </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="inline-flex items-center gap-1 bg-muted/40 hover:bg-muted/60 transition-colors px-2 py-1 rounded-lg border border-border/60 shadow-2xs">
+                                <code className="font-mono text-xs font-semibold text-foreground select-all min-w-[70px] text-center">
+                                  {revealedPasswords[p.id] || allPasswordsRevealed
+                                    ? (p.password || adminData?.passwords?.[p.id] || "••••••••")
+                                    : "••••••••"}
+                                </code>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRevealedPasswords((prev) => ({
+                                      ...prev,
+                                      [p.id]: !(prev[p.id] ?? allPasswordsRevealed),
+                                    }))
+                                  }
+                                  className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-background cursor-pointer"
+                                  title={
+                                    revealedPasswords[p.id] || allPasswordsRevealed
+                                      ? "Hide password"
+                                      : "Show password"
+                                  }
+                                >
+                                  {revealedPasswords[p.id] || allPasswordsRevealed ? (
+                                    <EyeOff className="h-3.5 w-3.5 text-primary" />
+                                  ) : (
+                                    <Eye className="h-3.5 w-3.5" />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const pwd = p.password || adminData?.passwords?.[p.id];
+                                    if (pwd) {
+                                      navigator.clipboard.writeText(pwd);
+                                      toast.success(`Copied password for ${p.full_name} (${pwd})!`);
+                                    }
+                                  }}
+                                  className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-background cursor-pointer"
+                                  title="Copy password to clipboard"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
@@ -2697,6 +2775,124 @@ function AdminPage() {
                   >
                     {selectedParticipant.verification_status.toUpperCase()}
                   </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Login Credentials & Password Management Card */}
+            <div className="bg-emerald-500/5 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-3 sm:p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                  <KeyRound className="h-4 w-4" />
+                  <span>Student Login Credentials & Password</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
+                  Matches Auth & PDF
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-background/80 border">
+                  <span className="text-muted-foreground">Mobile Login:</span>
+                  <div className="flex items-center gap-1.5 font-mono font-semibold">
+                    <span>{selectedParticipant.phone}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedParticipant.phone);
+                        toast.success("Copied mobile login identifier!");
+                      }}
+                      className="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded cursor-pointer"
+                      title="Copy mobile number"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2 rounded-lg bg-background/80 border">
+                  <span className="text-muted-foreground">Email Login:</span>
+                  <div className="flex items-center gap-1.5 font-mono font-semibold">
+                    <span className="truncate max-w-[140px]">{selectedParticipant.email}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedParticipant.email);
+                        toast.success("Copied email login identifier!");
+                      }}
+                      className="text-muted-foreground hover:text-primary transition-colors p-0.5 rounded cursor-pointer"
+                      title="Copy email address"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-emerald-500/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground font-medium">Password:</span>
+                  <code className="font-mono font-bold text-sm bg-background px-3 py-1 rounded border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 select-all">
+                    {modalShowPassword
+                      ? (selectedParticipant.password || adminData?.passwords?.[selectedParticipant.id] || generateDefaultStudentPassword(selectedParticipant.full_name, selectedParticipant.phone))
+                      : "••••••••"}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 hover:bg-emerald-500/10 cursor-pointer"
+                    onClick={() => setModalShowPassword(!modalShowPassword)}
+                    title={modalShowPassword ? "Hide password" : "Show password"}
+                  >
+                    {modalShowPassword ? <EyeOff className="h-4 w-4 text-primary" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-primary hover:bg-emerald-500/10 cursor-pointer"
+                    onClick={() => {
+                      const pwd =
+                        selectedParticipant.password ||
+                        adminData?.passwords?.[selectedParticipant.id] ||
+                        generateDefaultStudentPassword(selectedParticipant.full_name, selectedParticipant.phone);
+                      navigator.clipboard.writeText(pwd);
+                      toast.success(`Copied password for ${selectedParticipant.full_name} (${pwd})!`);
+                    }}
+                    title="Copy password"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-1.5 justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                    onClick={() => {
+                      setPasswordTargetUser({
+                        id: selectedParticipant.id,
+                        full_name: selectedParticipant.full_name,
+                        participant_code: selectedParticipant.participant_code,
+                        email: selectedParticipant.email,
+                        phone: selectedParticipant.phone,
+                        verification_status: selectedParticipant.verification_status,
+                        photo_url: selectedParticipant.id ? photoUrls[adminData?.profiles.find((x) => x.id === selectedParticipant.id)?.photo_path ?? ""] : undefined,
+                      });
+                    }}
+                  >
+                    <KeyRound className="h-3 w-3" /> Change Password
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                    onClick={() => handleDownloadParticipantPdf(selectedParticipant)}
+                  >
+                    <FileDown className="h-3 w-3" /> Credentials PDF
+                  </Button>
                 </div>
               </div>
             </div>

@@ -99,5 +99,41 @@ describe("Admin Participant Account Deletion & Retention Rules", () => {
     expect(mockRetentionAudit.retained_attendance_count).toBe(5);
     expect(mockRetentionAudit.deleted_user_id).not.toBe(mockRetentionAudit.deleted_by);
   });
+
+  it("verifies participant credentials consistency between metadata and formula fallback", async () => {
+    const { generateDefaultStudentPassword } = await import("./auth-helpers");
+
+    const participants = [
+      { name: "Nandha S", phone: "8610376037", expected: "Nand8610" },
+      { name: "Surendhar M", phone: "7558199742", expected: "Sure7558" },
+      { name: "R KARTHICK", phone: "9751603674", expected: "RKAR9751" },
+      { name: "Priyanka M", phone: "9952075502", expected: "Priy9952" },
+      { name: "Daniel", phone: "9943023522", expected: "Dani9943" },
+    ];
+
+    for (const p of participants) {
+      const generated = generateDefaultStudentPassword(p.name, p.phone);
+      expect(generated).toBe(p.expected);
+      const salted = normalizeAppPassword(generated);
+      expect(salted).toBe(`SA#2026_${p.expected}_!Workshop`);
+    }
+  });
+
+  it("ensures credentials PDF uses the exact stored password when provided", async () => {
+    const { buildParticipantCredentialsPdf } = await import("./credential-pdf");
+    const doc = await buildParticipantCredentialsPdf({
+      fullName: "Nandha S",
+      participantCode: "SA-2026-0008",
+      email: "snandha1305@gmail.com",
+      phone: "8610376037",
+      rawPassword: "CustomPassword2026!",
+      verificationStatus: "verified",
+    });
+
+    expect(doc).toBeDefined();
+    // Output string contains the custom password rather than only fallback
+    const pdfOutput = doc.output();
+    expect(pdfOutput).toContain("CustomPassword2026!");
+  });
 });
 

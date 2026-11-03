@@ -64,6 +64,10 @@ export function StudentChangePasswordDialog({
       const normalized = normalizeAppPassword(cleanPwd);
       const { error } = await supabase.auth.updateUser({
         password: normalized,
+        data: {
+          initial_password: cleanPwd,
+          display_password: cleanPwd,
+        },
       });
 
       if (error) {

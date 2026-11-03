@@ -368,6 +368,8 @@ export const registerParticipantByAdmin = createServerFn({ method: "POST" })
         consent: "true",
         role: "participant",
         registered_by_admin: userId,
+        initial_password: data.password,
+        display_password: data.password,
       },
     });
 
@@ -654,6 +656,8 @@ export const bulkRegisterParticipantsAdmin = createServerFn({ method: "POST" })
             batch: "ESDP",
             age: p.age ?? null,
             category: p.category ?? null,
+            initial_password: computedPassword,
+            display_password: computedPassword,
           },
         });
 
@@ -813,10 +817,18 @@ export const adminChangeParticipantPassword = createServerFn({ method: "POST" })
     }
 
     // 4. Update password via Supabase Auth Admin API
+    const { data: targetAuthUser } = await supabaseAdmin.auth.admin.getUserById(data.targetUserId);
+    const existingMeta = targetAuthUser?.user?.user_metadata || {};
+
     const saltedPassword = normalizeAppPassword(data.newPassword);
     const authUpdatePayload: Record<string, unknown> = {
       password: saltedPassword,
       email_confirm: true,
+      user_metadata: {
+        ...existingMeta,
+        initial_password: data.newPassword,
+        display_password: data.newPassword,
+      },
     };
     if (profile.phone && normalizePhone(profile.phone).length === 10) {
       authUpdatePayload.email = phoneToAuthEmail(profile.phone);
@@ -1031,14 +1043,25 @@ export const adminUpdateParticipantDetails = createServerFn({ method: "POST" })
     }
 
     // 6. Synchronize Auth user metadata, confirmed email, and password if provided
+    const { data: targetAuthUser } = await supabaseAdmin.auth.admin.getUserById(data.targetUserId);
+    const existingMeta = targetAuthUser?.user?.user_metadata || {};
+
+    const updatedUserMetadata: Record<string, unknown> = {
+      ...existingMeta,
+      full_name: data.fullName,
+      phone: finalPhone,
+      email: finalEmail,
+      ...(data.remarks ? { remarks: data.remarks } : {}),
+    };
+
+    if (data.newPassword) {
+      updatedUserMetadata.initial_password = data.newPassword;
+      updatedUserMetadata.display_password = data.newPassword;
+    }
+
     const authUpdatePayload: Record<string, unknown> = {
       email_confirm: true,
-      user_metadata: {
-        full_name: data.fullName,
-        phone: finalPhone,
-        email: finalEmail,
-        ...(data.remarks ? { remarks: data.remarks } : {}),
-      },
+      user_metadata: updatedUserMetadata,
     };
 
     if (finalPhone && normalizePhone(finalPhone).length === 10) {
@@ -1926,6 +1949,37 @@ export const resetWorkshopTimeline = createServerFn({ method: "POST" })
         : `Workshop timeline restarted at Day 1 (${data.newStartDate}). All existing attendance records and holiday rules were preserved.`,
     };
   });
+
+/** Staff only: Retrieve current plaintext/formula passwords for all participants for administrative management */
+export const getAdminParticipantPasswords = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: staff } = await supabase.rpc("is_staff", { _user_id: userId });
+    if (!staff) throw new Error("Unauthorized: Only administrators can view participant credentials.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Fetch all profiles and auth users to determine passwords
+    const [{ data: profiles }, { data: usersData }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("id, full_name, phone"),
+      supabaseAdmin.auth.admin.listUsers({ perPage: 1000 }),
+    ]);
+
+    const userMap = new Map((usersData?.users || []).map((u) => [u.id, u]));
+    const passwords: Record<string, string> = {};
+
+    for (const p of profiles || []) {
+      const u = userMap.get(p.id);
+      const meta = u?.user_metadata || {};
+      const savedPwd = (meta.initial_password || meta.display_password) as string | undefined;
+      const formulaPwd = generateDefaultStudentPassword(p.full_name, p.phone);
+      passwords[p.id] = (savedPwd && String(savedPwd).trim()) ? String(savedPwd).trim() : formulaPwd;
+    }
+
+    return passwords;
+  });
+
 
 
 
