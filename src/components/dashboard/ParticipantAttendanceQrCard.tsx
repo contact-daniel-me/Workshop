@@ -207,9 +207,12 @@ export function ParticipantAttendanceQrCard({
           }
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to load attendance QR";
+        const rawMsg = err instanceof Error ? err.message : "Failed to load attendance QR";
+        const msg =
+          rawMsg.includes("Failed to fetch") || rawMsg.includes("fetch")
+            ? "Connection interrupted. Tap refresh to load today's attendance QR code."
+            : rawMsg;
         setErrorMsg(msg);
-        toast.error(msg);
       } finally {
         setLoading(false);
       }

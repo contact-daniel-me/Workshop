@@ -40,218 +40,231 @@ export const getParticipantDailyQr = createServerFn({ method: "POST" })
     return { participantId: input?.participantId };
   })
   .handler(async ({ data: input, context }): Promise<ParticipantQrResponse> => {
-    const { userId } = context;
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const { userId } = context;
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const targetId = input?.participantId || userId;
+      const targetId = input?.participantId || userId;
 
-    // Security check: Only staff can generate on behalf of another user
-    if (targetId !== userId) {
-      const { data: staff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
-      if (!staff) {
+      // Security check: Only staff can generate on behalf of another user
+      if (targetId !== userId) {
+        const { data: staff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+        if (!staff) {
+          return {
+            ok: false,
+            code: "UNAUTHORIZED",
+            message: "You are not authorized to generate a QR for another participant.",
+          };
+        }
+      }
+
+      // 1. First, check if participant profile exists & is approved
+      const { data: profile, error: profErr } = await supabaseAdmin
+        .from("profiles")
+        .select("id, verification_status, full_name, participant_code")
+        .eq("id", targetId)
+        .maybeSingle();
+
+      if (profErr || !profile) {
         return {
           ok: false,
-          code: "UNAUTHORIZED",
-          message: "You are not authorized to generate a QR for another participant.",
+          code: "ERROR",
+          message: "Participant profile not found.",
         };
       }
-    }
 
-    // 1. First, check if participant profile exists & is approved
-    const { data: profile, error: profErr } = await supabaseAdmin
-      .from("profiles")
-      .select("id, verification_status, full_name, participant_code")
-      .eq("id", targetId)
-      .maybeSingle();
+      if (profile.verification_status !== "verified") {
+        return {
+          ok: false,
+          code: "NOT_APPROVED",
+          message:
+            profile.verification_status === "rejected"
+              ? "Your registration has been rejected. No attendance QR will be issued."
+              : "Your account is pending administrator approval. Attendance QR is locked until approved.",
+        };
+      }
 
-    if (profErr || !profile) {
-      return {
-        ok: false,
-        code: "ERROR",
-        message: "Participant profile not found.",
-      };
-    }
+      // 2. Determine official session date in workshop timezone (Asia/Kolkata)
+      const today = todayLocal();
 
-    if (profile.verification_status !== "verified") {
-      return {
-        ok: false,
-        code: "NOT_APPROVED",
-        message:
-          profile.verification_status === "rejected"
-            ? "Your registration has been rejected. No attendance QR will be issued."
-            : "Your account is pending administrator approval. Attendance QR is locked until approved.",
-      };
-    }
+      // 3. Check workshop calendar
+      const { data: settings } = await supabaseAdmin
+        .from("workshop_settings")
+        .select("*")
+        .maybeSingle();
 
-    // 2. Determine official session date in workshop timezone (Asia/Kolkata)
-    const today = todayLocal();
+      // Check if today is configured as a holiday / non-working day
+      const { data: todayDayConfig } = await supabaseAdmin
+        .from("workshop_days")
+        .select("is_active, topic")
+        .eq("day_date", today)
+        .maybeSingle();
 
-    // 3. Check workshop calendar
-    const { data: settings } = await supabaseAdmin
-      .from("workshop_settings")
-      .select("*")
-      .maybeSingle();
+      if (todayDayConfig && !todayDayConfig.is_active) {
+        return {
+          ok: false,
+          code: "HOLIDAY_NON_WORKING_DAY",
+          dayDate: today,
+          message: `Today (${today}) is declared a non-working day or holiday (${todayDayConfig.topic || "Holiday"}). Attendance is not applicable.`,
+        };
+      }
 
-    // Check if today is configured as a holiday / non-working day
-    const { data: todayDayConfig } = await supabaseAdmin
-      .from("workshop_days")
-      .select("is_active, topic")
-      .eq("day_date", today)
-      .maybeSingle();
+      if (!settings || !workshopDays(settings).includes(today)) {
+        return {
+          ok: false,
+          code: "NO_SESSION_SCHEDULED",
+          dayDate: today,
+          message: "No workshop session is scheduled for today.",
+        };
+      }
 
-    if (todayDayConfig && !todayDayConfig.is_active) {
-      return {
-        ok: false,
-        code: "HOLIDAY_NON_WORKING_DAY",
-        dayDate: today,
-        message: `Today (${today}) is declared a non-working day or holiday (${todayDayConfig.topic || "Holiday"}). Attendance is not applicable.`,
-      };
-    }
+      // 4. Check if participant has already marked BOTH Entry and Exit for today
+      const { data: existingAttendance } = await supabaseAdmin
+        .from("attendance")
+        .select("id, status, morning_status, afternoon_status, checked_in_at, method")
+        .eq("user_id", targetId)
+        .eq("day_date", today)
+        .maybeSingle();
 
-    if (!settings || !workshopDays(settings).includes(today)) {
-      return {
-        ok: false,
-        code: "NO_SESSION_SCHEDULED",
-        dayDate: today,
-        message: "No workshop session is scheduled for today.",
-      };
-    }
+      const hasEntry = Boolean(
+        existingAttendance &&
+          (existingAttendance.morning_status === "present" ||
+            (existingAttendance.status === "present" && !existingAttendance.morning_status))
+      );
+      const hasExit = Boolean(existingAttendance && existingAttendance.afternoon_status === "present");
 
-    // 4. Check if participant has already marked BOTH Entry and Exit for today
-    const { data: existingAttendance } = await supabaseAdmin
-      .from("attendance")
-      .select("id, status, morning_status, afternoon_status, checked_in_at, method")
-      .eq("user_id", targetId)
-      .eq("day_date", today)
-      .maybeSingle();
+      if (hasEntry && hasExit) {
+        const nextUnlock = getNextSessionUnlockTime(today, true);
+        return {
+          ok: true,
+          code: "ALREADY_PRESENT",
+          alreadyMarked: true,
+          entryMarked: true,
+          exitMarked: true,
+          status: existingAttendance.status,
+          checkedInAt: existingAttendance.checked_in_at,
+          dayDate: today,
+          unlocksAt: nextUnlock,
+          message: "Both Entry and Exit attendance have already been recorded for today.",
+        };
+      }
 
-    const hasEntry = Boolean(
-      existingAttendance &&
-        (existingAttendance.morning_status === "present" ||
-          (existingAttendance.status === "present" && !existingAttendance.morning_status))
-    );
-    const hasExit = Boolean(existingAttendance && existingAttendance.afternoon_status === "present");
+      // 5. Restrict QR generation until session start (12:00 AM Midnight IST)
+      const kolkata = getKolkataTime();
+      const isStaffOperation = targetId !== userId;
+      if (SESSION_START_HOUR > 0 && kolkata.hour < SESSION_START_HOUR && !isStaffOperation) {
+        const unlocksAt = getNextSessionUnlockTime(today, false);
+        return {
+          ok: false,
+          code: "LOCKED_UNTIL_SESSION_TIME",
+          dayDate: today,
+          unlocksAt,
+          message: "Today's attendance QR code will generate at 12:00 AM.",
+        };
+      }
 
-    if (hasEntry && hasExit) {
-      const nextUnlock = getNextSessionUnlockTime(today, true);
-      return {
-        ok: true,
-        code: "ALREADY_PRESENT",
-        alreadyMarked: true,
-        entryMarked: true,
-        exitMarked: true,
-        status: existingAttendance.status,
-        checkedInAt: existingAttendance.checked_in_at,
-        dayDate: today,
-        unlocksAt: nextUnlock,
-        message: "Both Entry and Exit attendance have already been recorded for today.",
-      };
-    }
+      // 6. Check if an active, unexpired, unused token exists for today
+      const nowIso = new Date().toISOString();
+      const expiryBufferTime = new Date(Date.now() + 30_000).toISOString();
 
-    // 5. Restrict QR generation until session start (12:00 AM Midnight IST)
-    const kolkata = getKolkataTime();
-    const isStaffOperation = targetId !== userId;
-    if (SESSION_START_HOUR > 0 && kolkata.hour < SESSION_START_HOUR && !isStaffOperation) {
-      const unlocksAt = getNextSessionUnlockTime(today, false);
-      return {
-        ok: false,
-        code: "LOCKED_UNTIL_SESSION_TIME",
-        dayDate: today,
-        unlocksAt,
-        message: "Today's attendance QR code will generate at 12:00 AM.",
-      };
-    }
+      const { data: activeSessions } = await supabaseAdmin
+        .from("qr_sessions")
+        .select("*")
+        .eq("created_by", targetId)
+        .eq("day_date", today)
+        .eq("revoked", false)
+        .gt("expires_at", expiryBufferTime)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-    // 6. Check if an active, unexpired, unused token exists for today
-    const nowIso = new Date().toISOString();
-    const expiryBufferTime = new Date(Date.now() + 30_000).toISOString();
+      const activeSession = activeSessions?.[0];
+      if (activeSession) {
+        return {
+          ok: true,
+          code: "ACTIVE_QR",
+          token: activeSession.token,
+          shortCode: activeSession.short_code,
+          expiresAt: activeSession.expires_at,
+          dayDate: activeSession.day_date,
+          entryMarked: hasEntry,
+          exitMarked: hasExit,
+          message: "Active session reused.",
+        };
+      }
 
-    const { data: activeSessions } = await supabaseAdmin
-      .from("qr_sessions")
-      .select("*")
-      .eq("created_by", targetId)
-      .eq("day_date", today)
-      .eq("revoked", false)
-      .gt("expires_at", expiryBufferTime)
-      .order("created_at", { ascending: false })
-      .limit(1);
+      // 6. Otherwise revoke older expired tokens for today
+      await supabaseAdmin
+        .from("qr_sessions")
+        .update({ revoked: true })
+        .eq("created_by", targetId)
+        .eq("day_date", today)
+        .eq("revoked", false);
 
-    const activeSession = activeSessions?.[0];
-    if (activeSession) {
+      // 7. Generate a new cryptographically secure token
+      const { generateSecureToken, generateShortCode } = await import("./attendance-qr.crypto");
+      const token = generateSecureToken(32);
+      const short_code = generateShortCode();
+
+      const validityMinutes = settings.qr_validity_minutes || 15;
+      const expiresAt = new Date(Date.now() + validityMinutes * 60_000).toISOString();
+
+      const { data: newSession, error: insertErr } = await supabaseAdmin
+        .from("qr_sessions")
+        .insert({
+          day_date: today,
+          token,
+          short_code,
+          expires_at: expiresAt,
+          revoked: false,
+          created_by: targetId,
+        })
+        .select()
+        .single();
+
+      if (insertErr || !newSession) {
+        console.error("Failed to insert qr_session:", insertErr);
+        return {
+          ok: false,
+          code: "ERROR",
+          message: "Could not generate attendance QR. Please try again.",
+        };
+      }
+
+      // Audit log
+      try {
+        await supabaseAdmin.from("audit_logs").insert({
+          actor_id: userId,
+          target_user: targetId,
+          action: "qr_token_generated",
+          details: {
+            sessionId: newSession.id,
+            dayDate: today,
+            expiresAt,
+          } as never,
+        });
+      } catch (auditErr) {
+        console.warn("Audit log insert warning:", auditErr);
+      }
+
       return {
         ok: true,
         code: "ACTIVE_QR",
-        token: activeSession.token,
-        shortCode: activeSession.short_code,
-        expiresAt: activeSession.expires_at,
-        dayDate: activeSession.day_date,
+        token,
+        shortCode: short_code,
+        expiresAt,
+        dayDate: today,
         entryMarked: hasEntry,
         exitMarked: hasExit,
-        message: "Active session reused.",
+        message: "New attendance QR token generated.",
       };
-    }
-
-    // 6. Otherwise revoke older expired tokens for today
-    await supabaseAdmin
-      .from("qr_sessions")
-      .update({ revoked: true })
-      .eq("created_by", targetId)
-      .eq("day_date", today)
-      .eq("revoked", false);
-
-    // 7. Generate a new cryptographically secure token
-    const { generateSecureToken, generateShortCode } = await import("./attendance-qr.crypto");
-    const token = generateSecureToken(32);
-    const short_code = generateShortCode();
-
-    const validityMinutes = settings.qr_validity_minutes || 15;
-    const expiresAt = new Date(Date.now() + validityMinutes * 60_000).toISOString();
-
-    const { data: newSession, error: insertErr } = await supabaseAdmin
-      .from("qr_sessions")
-      .insert({
-        day_date: today,
-        token,
-        short_code,
-        expires_at: expiresAt,
-        revoked: false,
-        created_by: targetId,
-      })
-      .select()
-      .single();
-
-    if (insertErr || !newSession) {
-      console.error("Failed to insert qr_session:", insertErr);
+    } catch (err: unknown) {
+      console.error("getParticipantDailyQr error:", err);
       return {
         ok: false,
         code: "ERROR",
-        message: "Could not generate attendance QR. Please try again.",
+        message: err instanceof Error ? err.message : "Failed to load attendance QR.",
       };
     }
-
-    // Audit log
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: userId,
-      target_user: targetId,
-      action: "qr_token_generated",
-      details: {
-        sessionId: newSession.id,
-        dayDate: today,
-        expiresAt,
-      } as never,
-    });
-
-    return {
-      ok: true,
-      code: "ACTIVE_QR",
-      token,
-      shortCode: short_code,
-      expiresAt,
-      dayDate: today,
-      entryMarked: hasEntry,
-      exitMarked: hasExit,
-      message: "New attendance QR token generated.",
-    };
   });
 
 export type QrVerificationResultCode =
@@ -1081,18 +1094,19 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data: input, context }): Promise<AdminFaceVerificationResult> => {
-    const { userId } = context;
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const { userId } = context;
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // 1. Authorization check: Administrator staff only
-    const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
-    if (!isStaff) {
-      return {
-        ok: false,
-        resultCode: "UNAUTHORIZED",
-        message: "Only authorized administrators can access the face verification console.",
-      };
-    }
+      // 1. Authorization check: Administrator staff only
+      const { data: isStaff } = await supabaseAdmin.rpc("is_staff", { _user_id: userId });
+      if (!isStaff) {
+        return {
+          ok: false,
+          resultCode: "UNAUTHORIZED",
+          message: "Only authorized administrators can access the face verification console.",
+        };
+      }
 
     // 2. Validate live capture image payload
     const { imageBase64, participantId, sessionType = "entry" } = input;
@@ -1629,6 +1643,14 @@ export const adminVerifyFaceAttendance = createServerFn({ method: "POST" })
 
     // Clear match! Mark attendance
     return await recordFaceAttendance(top.profile, top.score);
-  });
+  } catch (err: unknown) {
+    console.error("adminVerifyFaceAttendance error:", err);
+    return {
+      ok: false,
+      resultCode: "ERROR",
+      message: err instanceof Error ? err.message : "Face verification encountered an error.",
+    };
+  }
+});
 
 
