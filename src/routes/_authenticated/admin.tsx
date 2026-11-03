@@ -70,6 +70,9 @@ import {
   Download,
   FileText,
   Layers,
+  Sun,
+  Sunset,
+  RefreshCw,
 } from "lucide-react";
 import { AdminQrScannerTab } from "@/components/admin/AdminQrScannerTab";
 import { AdminAttendanceManagementTab } from "@/components/admin/AdminAttendanceManagementTab";
