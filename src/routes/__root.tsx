@@ -138,21 +138,6 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              window.addEventListener('vite:preloadError', function() {
-                var k = 'vite_chunk_reload';
-                var last = sessionStorage.getItem(k);
-                var now = Date.now();
-                if (!last || now - Number(last) > 8000) {
-                  sessionStorage.setItem(k, String(now));
-                  window.location.reload();
-                }
-              });
-            `,
-          }}
-        />
       </head>
       <body>
         {children}
@@ -165,6 +150,22 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
+
+  // Handle stale chunk reload after new deployments seamlessly without hydration mismatch
+  useEffect(() => {
+    const handlePreloadError = () => {
+      const k = "vite_chunk_reload";
+      const last = sessionStorage.getItem(k);
+      const now = Date.now();
+      if (!last || now - Number(last) > 8000) {
+        sessionStorage.setItem(k, String(now));
+        window.location.reload();
+      }
+    };
+    window.addEventListener("vite:preloadError", handlePreloadError);
+    return () => window.removeEventListener("vite:preloadError", handlePreloadError);
+  }, []);
+
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
